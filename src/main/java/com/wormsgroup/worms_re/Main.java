@@ -25,6 +25,10 @@ public class Main extends Application {
     private Pane uiRoot = new Pane();
 
     private Node player;
+    private Node enemyPlayer;
+    private NetworkManager networkManager;
+    private double lastSentX = -1;
+    private double lastSentY = -1;
     private Point2D playerVelocity = new Point2D(0, 0);
     private boolean canJump = true;
 
@@ -57,6 +61,7 @@ public class Main extends Application {
         }
 
         player = createEntity(0,200, 20, 20, Color.BLUE);
+        enemyPlayer = createEntity(0,200, 20, 20, Color.GREEN);
         player.translateXProperty().addListener((obs, old, newVal) -> {
             int offset = newVal.intValue();
 
@@ -91,6 +96,17 @@ public class Main extends Application {
         // Check if there was a change in Y without using the jump button to prevent midair jump while falling
         if (oldY != player.getTranslateY()) {
             canJump = false;
+        }
+
+        // Send network data if position changed
+        if (networkManager != null) {
+            double currentX = player.getTranslateX();
+            double currentY = player.getTranslateY();
+            if (currentX != lastSentX || currentY != lastSentY) {
+                networkManager.sendData(currentX + "," + currentY);
+                lastSentX = currentX;
+                lastSentY = currentY;
+            }
         }
     }
 
@@ -168,6 +184,34 @@ public class Main extends Application {
     @Override
     public void start(Stage mainStage) throws Exception {
         initContent();
+
+        // Initialize Network
+        try {
+            networkManager = new NetworkManager(5000, message -> {
+                javafx.application.Platform.runLater(() -> {
+                    String[] parts = message.split(",");
+                    if (parts.length == 2) {
+                        try {
+                            double x = Double.parseDouble(parts[0]);
+                            double y = Double.parseDouble(parts[1]);
+                            enemyPlayer.setTranslateX(x);
+                            enemyPlayer.setTranslateY(y);
+                        } catch (NumberFormatException ignored) {}
+                    }
+                });
+            });
+            networkManager.startListening();
+            // Connect to your friend's IP
+            networkManager.setPeer("160.20.41.35", 5000); 
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        mainStage.setOnCloseRequest(e -> {
+            if (networkManager != null) {
+                networkManager.close();
+            }
+        });
 
         // Set GameScene
         Scene scene = new Scene(appRoot);
