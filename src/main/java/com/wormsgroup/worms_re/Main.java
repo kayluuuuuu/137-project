@@ -2,7 +2,6 @@ package com.wormsgroup.worms_re;
 
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
-import javafx.geometry.Point2D;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.input.KeyCode;
@@ -24,9 +23,7 @@ public class Main extends Application {
     private Pane gameRoot = new Pane();
     private Pane uiRoot = new Pane();
 
-    private Node player;
-    private Point2D playerVelocity = new Point2D(0, 0);
-    private boolean canJump = true;
+    private Player player;
 
     private static final float timeStep = 0.01666666f;
     private float accumulatedTime = 0;
@@ -56,8 +53,11 @@ public class Main extends Application {
             }
         }
 
-        player = createEntity(0,200, 20, 20, Color.BLUE);
-        player.translateXProperty().addListener((obs, old, newVal) -> {
+        // Create player instance
+        player = new Player(0, 200, gameRoot, platforms, levelWidth);
+        
+        // Add camera follow for player
+        player.getEntity().translateXProperty().addListener((obs, old, newVal) -> {
             int offset = newVal.intValue();
 
             if (offset > 400 && offset < levelWidth - 400) {
@@ -70,28 +70,19 @@ public class Main extends Application {
 
     // Game Loop
     private void update() {
-        // Movement
-        if (isPressed(KeyCode.W) && player.getTranslateY() >= 5) {
-            jumpPlayer();
+        // Handle input
+        if (isPressed(KeyCode.W)) {
+            player.jump();
         }
-        if (isPressed(KeyCode.A) && player.getTranslateX() >= 5) {
-            movePlayerX(-5);
+        if (isPressed(KeyCode.A)) {
+            player.moveLeft();
         }
-        if (isPressed(KeyCode.D) && player.getTranslateX() + 20 <= levelWidth - 5) {
-            movePlayerX(5);
+        if (isPressed(KeyCode.D)) {
+            player.moveRight();
         }
 
-        if (playerVelocity.getY() < 10) {
-            playerVelocity = playerVelocity.add(0, 1);
-        }
-        // Get current Y
-        double oldY = player.getTranslateY();
-        movePlayerY((int) playerVelocity.getY());
-
-        // Check if there was a change in Y without using the jump button to prevent midair jump while falling
-        if (oldY != player.getTranslateY()) {
-            canJump = false;
-        }
+        // Update player physics
+        player.update();
     }
 
     // Initialize Entities
@@ -109,60 +100,6 @@ public class Main extends Application {
 
     private boolean isPressed(KeyCode key) {
         return keys.getOrDefault(key, false);
-    }
-
-    // Prevents multiple jumps
-    private void jumpPlayer() {
-        if (canJump) {
-            playerVelocity = playerVelocity.add(0, -30);
-            canJump = false;
-        }
-    }
-
-    // Function to move player entity along X-Axis
-    private void movePlayerX(int val) {
-        boolean movingRight = val > 0;
-
-        for (int i = 0; i < Math.abs(val); i++) {
-            for (Node platform : platforms) {
-                if (player.getBoundsInParent().intersects(platform.getBoundsInParent())) {
-                    if (movingRight) {
-                        if (player.getTranslateX() + 20 == platform.getTranslateX()) {
-                            return;
-                        }
-                    } else {
-                        if (player.getTranslateX() == platform.getTranslateX() + 40) {
-                            return;
-                        }
-                    }
-                }
-            }
-            player.setTranslateX(player.getTranslateX() + (movingRight ? 1 : -1));
-        }
-    }
-
-    // Function to move player entity along Y-Axis
-    private void movePlayerY(int val) {
-        boolean movingDown = val > 0;
-
-        for (int i = 0; i < Math.abs(val); i++) {
-            for (Node platform : platforms) {
-                if (player.getBoundsInParent().intersects(platform.getBoundsInParent())) {
-                    if (movingDown) {
-                        if (player.getTranslateY() + 20 == platform.getTranslateY()) {
-                            player.setTranslateY(player.getTranslateY() - 1);
-                            canJump = true;
-                            return;
-                        }
-                    } else {
-                        if (player.getTranslateY() == platform.getTranslateY() + 40) {
-                            return;
-                        }
-                    }
-                }
-            }
-            player.setTranslateY(player.getTranslateY() + (movingDown ? 1 : -1));
-        }
     }
 
     @Override
