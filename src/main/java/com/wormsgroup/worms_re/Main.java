@@ -92,11 +92,11 @@ public class Main extends Application {
 
         // When a local projectile hits the remote player:
         //   1. Apply damage to the local ghost so the bar updates immediately
-        //   2. Broadcast "HIT:damage" so the peer applies it to themselves (authoritative HP)
-        player.setHitCallback(hitPlayer -> {
-            hitPlayer.takeDamage(player.getWeaponDamage());
+        //   2. Broadcast "HIT:n" so the peer applies it to themselves (authoritative HP)
+        player.setHitCallback((hitPlayer, damage) -> {
+            hitPlayer.takeDamage(damage);
             if (networkManager != null) {
-                networkManager.sendData("HIT:" + player.getWeaponDamage());
+                networkManager.sendData("HIT:" + damage);
             }
         });
 

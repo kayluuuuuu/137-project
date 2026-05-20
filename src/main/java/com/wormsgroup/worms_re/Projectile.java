@@ -6,7 +6,7 @@ import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import java.util.ArrayList;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 
 public class Projectile {
     private Circle  sprite;
@@ -14,20 +14,20 @@ public class Projectile {
     private Pane    gameRoot;
     private ArrayList<Node>   platforms;
     private ArrayList<Player> players;
-    private Player  shooter;    // excluded from self-hit
+    private Player  shooter;
     private int     damage;
     private boolean active = true;
 
-    // Fired when projectile hits a player.
-    // Main wires this up to decide: apply locally, broadcast, or both.
-    private Consumer<Player> onHitPlayer;
+    // Called on hit: (hitPlayer, damageAmount)
+    // Main uses this to apply damage locally AND broadcast "HIT:n" to the peer
+    private BiConsumer<Player, Integer> onHitPlayer;
 
     private static final double GRAVITY = 0.3;
 
     public Projectile(double startX, double startY, double angleDegrees, double power,
                       Pane gameRoot, ArrayList<Node> platforms,
                       ArrayList<Player> players, Player shooter, int damage,
-                      Consumer<Player> onHitPlayer) {
+                      BiConsumer<Player, Integer> onHitPlayer) {
         this.gameRoot     = gameRoot;
         this.platforms    = platforms;
         this.players      = players;
@@ -64,7 +64,7 @@ public class Projectile {
         for (Player p : players) {
             if (p == shooter) continue;
             if (sprite.getBoundsInParent().intersects(p.getEntity().getBoundsInParent())) {
-                if (onHitPlayer != null) onHitPlayer.accept(p);
+                if (onHitPlayer != null) onHitPlayer.accept(p, damage);
                 destroy();
                 return;
             }

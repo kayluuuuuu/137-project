@@ -49,8 +49,8 @@ public class Player {
     private ArrayList<Player>     allPlayers;
 
     // Set by Main so it can intercept hits and decide network vs local damage
-    private java.util.function.Consumer<Player> hitCallback = null;
-    public void setHitCallback(java.util.function.Consumer<Player> cb) { this.hitCallback = cb; }
+    private java.util.function.BiConsumer<Player, Integer> hitCallback = null;
+    public void setHitCallback(java.util.function.BiConsumer<Player, Integer> cb) { this.hitCallback = cb; }
 
     private static final int WIDTH              = 20;
     private static final int HEIGHT             = 20;
