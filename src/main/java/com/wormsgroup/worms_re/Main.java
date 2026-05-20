@@ -38,6 +38,13 @@ public class Main extends Application {
     private boolean leftPressed  = false;
     private boolean rightPressed = false;
 
+    // Fixed-timestep game loop (60 ticks/sec)
+    private static final float TIMESTEP    = 1.0f / 60.0f;
+    private float  accumulatedTime         = 0;
+    private long   previousTime            = 0;
+    private float  secondsSinceLastFpsLog  = 0;
+    private int    framesSinceLastFpsLog   = 0;
+
     // HUD labels
     private Label hudLabel = new Label();
     private Label netLabel = new Label();
@@ -81,7 +88,17 @@ public class Main extends Application {
         // Player adds itself after construction — or we add it here right after.
         player = new Player(40, 360, 100, gameRoot, uiRoot, platforms, levelWidth,
                             projectiles, allPlayers);
-        allPlayers.add(player); // now the list has the local player
+        allPlayers.add(player);
+
+        // When a local projectile hits the remote player:
+        //   1. Apply damage to the local ghost so the bar updates immediately
+        //   2. Broadcast "HIT:damage" so the peer applies it to themselves (authoritative HP)
+        player.setHitCallback(hitPlayer -> {
+            hitPlayer.takeDamage(player.getWeaponDamage());
+            if (networkManager != null) {
+                networkManager.sendData("HIT:" + player.getWeaponDamage());
+            }
+        });
 
         // Remote ghost sprite
         remoteGhost = new Rectangle(20, 20, Color.RED);
@@ -164,15 +181,27 @@ public class Main extends Application {
         });
     }
 
-    // Protocol: "x,y,hp"
+    // Protocol:
+    //   "x,y,hp"   — remote player position + their current HP
+    //   "HIT:n"    — remote player scored a hit on us for n damage
     private void handleNetworkMessage(String message) {
+        if (message.startsWith("HIT:")) {
+            // Peer confirmed they hit us — apply to local player (authoritative)
+            try {
+                int dmg = Integer.parseInt(message.substring(4));
+                player.takeDamage(dmg);
+            } catch (NumberFormatException ignored) {}
+            return;
+        }
+
         String[] parts = message.split(",");
-        if (parts.length >= 2) {
+        if (parts.length >= 3) {
             try {
                 remoteGhost.setTranslateX(Double.parseDouble(parts[0]));
                 remoteGhost.setTranslateY(Double.parseDouble(parts[1]));
                 remoteGhost.setVisible(true);
-                if (parts.length >= 3) remoteHp = Double.parseDouble(parts[2]);
+                // Sync remote HP from peer's authoritative value
+                remoteHp = Double.parseDouble(parts[2]);
             } catch (NumberFormatException ignored) {}
         }
     }
@@ -295,28 +324,27 @@ public class Main extends Application {
         });
 
         new AnimationTimer() {
-            private long lastFrameTime = System.nanoTime();
-
             @Override
-            public void handle(long currentNanoTime) {
-                double deltaTime = (currentNanoTime - lastFrameTime) / 1_000_000_000.0;
-                lastFrameTime = currentNanoTime;
-
-                if (leftPressed)  player.moveLeft(deltaTime);
-                if (rightPressed) player.moveRight(deltaTime);
-
-                player.update(deltaTime);
-                player.updateHpBar(gameRoot.getLayoutX());
-                updateRemoteHpBar();
-
-                for (int i = projectiles.size() - 1; i >= 0; i--) {
-                    Projectile p = projectiles.get(i);
-                    p.update();
-                    if (!p.isActive()) projectiles.remove(i);
+            public void handle(long now) {
+                // First frame — just record time and return
+                if (previousTime == 0) {
+                    previousTime = now;
+                    return;
                 }
 
-                broadcastState();
+                float secondsElapsed = (now - previousTime) / 1e9f;
+                accumulatedTime += secondsElapsed;
+                previousTime = now;
 
+                // Consume accumulated time in fixed 60Hz ticks
+                while (accumulatedTime >= TIMESTEP) {
+                    tick(TIMESTEP);
+                    accumulatedTime -= TIMESTEP;
+                }
+
+                // Per-render updates — HUD and HP bars only need once per frame
+                player.updateHpBar(gameRoot.getLayoutX());
+                updateRemoteHpBar();
                 hudLabel.setText(String.format(
                     "HP: %d\nState: %s\nTurn Clock: %.1fs\nMove Fuel: %.1fs\nAim Angle: %.0f°\nCharge: %.0f%%",
                     player.getHp(),
@@ -326,13 +354,38 @@ public class Main extends Application {
                     player.getAimAngle(),
                     player.getShootPower()
                 ));
+
+                // FPS log every 0.5s
+                secondsSinceLastFpsLog += secondsElapsed;
+                framesSinceLastFpsLog++;
+                if (secondsSinceLastFpsLog >= 0.5f) {
+                    System.out.println("FPS: " + Math.round(framesSinceLastFpsLog / secondsSinceLastFpsLog));
+                    secondsSinceLastFpsLog = 0;
+                    framesSinceLastFpsLog  = 0;
+                }
             }
         }.start();
 
-        primaryStage.setTitle("Worms RE  [:" + localPort + " → " + peerIp + ":" + peerPort + "]");
+        primaryStage.setTitle("Worms RE  [:" + localPort + " \u2192 " + peerIp + ":" + peerPort + "]");
         primaryStage.setScene(scene);
         primaryStage.setResizable(false);
         primaryStage.show();
+    }
+
+    // Fixed-timestep game logic — called 60x/sec regardless of render rate
+    private void tick(float dt) {
+        if (leftPressed)  player.moveLeft(dt);
+        if (rightPressed) player.moveRight(dt);
+
+        player.update(dt);
+
+        for (int i = projectiles.size() - 1; i >= 0; i--) {
+            Projectile p = projectiles.get(i);
+            p.update();
+            if (!p.isActive()) projectiles.remove(i);
+        }
+
+        broadcastState();
     }
 
     // -------------------------------------------------------------------------

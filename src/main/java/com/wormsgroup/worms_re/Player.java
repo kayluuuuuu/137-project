@@ -46,7 +46,11 @@ public class Player {
 
     private Line aimLine;
     private ArrayList<Projectile> activeProjectiles;
-    private ArrayList<Player>     allPlayers;   // used for hit detection in shoot()
+    private ArrayList<Player>     allPlayers;
+
+    // Set by Main so it can intercept hits and decide network vs local damage
+    private java.util.function.Consumer<Player> hitCallback = null;
+    public void setHitCallback(java.util.function.Consumer<Player> cb) { this.hitCallback = cb; }
 
     private static final int WIDTH              = 20;
     private static final int HEIGHT             = 20;
@@ -228,7 +232,8 @@ public class Player {
 
         Projectile proj = new Projectile(
             spawnX, spawnY, aimAngle, shootPower,
-            gameRoot, platforms, allPlayers, this, damage
+            gameRoot, platforms, allPlayers, this, damage,
+            hitCallback   // Main wires this to broadcast damage over network
         );
         activeProjectiles.add(proj);
 
@@ -301,6 +306,8 @@ public class Player {
     private void setActionState(ActionState s)  { this.currentState = s; }
     public Node        getEntity()               { return entity; }
     public int         getHp()                   { return hp; }
+    public void        setHp(int value)          { hp = Math.max(0, Math.min(maxHp, value)); }
+    public int         getWeaponDamage()         { return (currentWeapon != null) ? currentWeapon.getDamage() : 10; }
     public double      getTurnTimeRemaining()     { return Math.max(0, TURN_TIME_LIMIT - turnTimer); }
     public double      getMovementTimeRemaining() { return Math.max(0, movementTimeRemaining); }
     public double      getShootPower()            { return shootPower; }

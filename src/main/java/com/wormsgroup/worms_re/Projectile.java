@@ -6,6 +6,7 @@ import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import java.util.ArrayList;
+import java.util.function.Consumer;
 
 public class Projectile {
     private Circle  sprite;
@@ -13,20 +14,26 @@ public class Projectile {
     private Pane    gameRoot;
     private ArrayList<Node>   platforms;
     private ArrayList<Player> players;
-    private Player  shooter;   // excluded from self-hit
+    private Player  shooter;    // excluded from self-hit
     private int     damage;
     private boolean active = true;
+
+    // Fired when projectile hits a player.
+    // Main wires this up to decide: apply locally, broadcast, or both.
+    private Consumer<Player> onHitPlayer;
 
     private static final double GRAVITY = 0.3;
 
     public Projectile(double startX, double startY, double angleDegrees, double power,
                       Pane gameRoot, ArrayList<Node> platforms,
-                      ArrayList<Player> players, Player shooter, int damage) {
-        this.gameRoot  = gameRoot;
-        this.platforms = platforms;
-        this.players   = players;
-        this.shooter   = shooter;
-        this.damage    = damage;
+                      ArrayList<Player> players, Player shooter, int damage,
+                      Consumer<Player> onHitPlayer) {
+        this.gameRoot     = gameRoot;
+        this.platforms    = platforms;
+        this.players      = players;
+        this.shooter      = shooter;
+        this.damage       = damage;
+        this.onHitPlayer  = onHitPlayer;
 
         sprite = new Circle(5, Color.RED);
         sprite.setTranslateX(startX);
@@ -53,11 +60,11 @@ public class Projectile {
             }
         }
 
-        // Player hit detection — skip the shooter to avoid self-hit on launch
+        // Player hit — delegate to callback instead of calling takeDamage directly
         for (Player p : players) {
             if (p == shooter) continue;
             if (sprite.getBoundsInParent().intersects(p.getEntity().getBoundsInParent())) {
-                p.takeDamage(damage);
+                if (onHitPlayer != null) onHitPlayer.accept(p);
                 destroy();
                 return;
             }
