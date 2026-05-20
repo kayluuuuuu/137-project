@@ -1,152 +1,163 @@
 package com.wormsgroup.worms_re;
-
+import javafx.scene.Node;
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
-import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.control.Label;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 import javafx.stage.Stage;
-
 import java.util.ArrayList;
-import java.util.HashMap;
 
 public class Main extends Application {
-    // Enum for keys
-    private HashMap<KeyCode, Boolean> keys = new HashMap<KeyCode, Boolean>();
+    private static final int TILE_SIZE = 40;
+    private static final int VIEW_WIDTH = 800;
+    private static final int VIEW_HEIGHT = 600;
 
-    private ArrayList<Node> platforms = new ArrayList<Node>();
+    private Pane appRoot = new Pane();   // Root of the scene (fixed, full scene size)
+    private Pane gameRoot = new Pane();  // Scrolling world content
+    private Pane uiRoot = new Pane();    // HUD overlay (never scrolls)
 
-    private Pane appRoot = new Pane();
-    private Pane gameRoot = new Pane();
-    private Pane uiRoot = new Pane();
-
+    private ArrayList<Node> platforms = new ArrayList<>();
+    private ArrayList<Projectile> projectiles = new ArrayList<>();
     private Player player;
-
-    private static final float timeStep = 0.01666666f;
-    private float accumulatedTime = 0;
-    private long previousTime = 0;
-    private float secondsElapsedSinceLastFpsUpdate = 0f;
-    private int framesSinceLastFpsUpdate = 0;
-
     private int levelWidth;
 
-    // Initialize UI
+    // Input mapping states
+    private boolean leftPressed = false;
+    private boolean rightPressed = false;
+
+    // HUD Elements
+    private Label hudLabel = new Label();
+
     private void initContent() {
-        Rectangle bg = new Rectangle(800, 600);
+        // Background fill
+        Rectangle bg = new Rectangle(VIEW_WIDTH, VIEW_HEIGHT);
+        bg.setFill(Color.LIGHTCYAN);
 
-        levelWidth = LevelData.LEVEL1[0].length() * 40;
-
-        for (int i = 0; i < LevelData.LEVEL1.length; i++) {
-            String line = LevelData.LEVEL1[i];
-            for (int j = 0; j < line.length(); j++) {
-                switch (line.charAt(j)) {
-                    case '0':
-                        break;
+        // Parse LevelData tile map
+        levelWidth = LevelData.LEVEL1[0].length() * TILE_SIZE;
+        for (int row = 0; row < LevelData.LEVEL1.length; row++) {
+            String line = LevelData.LEVEL1[row];
+            for (int col = 0; col < line.length(); col++) {
+                switch (line.charAt(col)) {
                     case '1':
-                        Node platform = createEntity(j*40, i*40, 40, 40, Color.RED);
-                        platforms.add(platform);
-                    // TODO: add case for enemy char
+                        Rectangle tile = new Rectangle(TILE_SIZE, TILE_SIZE, Color.DARKGREEN);
+                        tile.setTranslateX(col * TILE_SIZE);
+                        tile.setTranslateY(row * TILE_SIZE);
+                        platforms.add(tile);
+                        gameRoot.getChildren().add(tile);
+                        break;
+                    // case '2': enemies, powerups, etc. go here
+                    default:
+                        break;
                 }
             }
         }
 
-        // Create player instance
-        player = new Player(0, 200, gameRoot, platforms, levelWidth);
-        
-        // Add camera follow for player
-        player.getEntity().translateXProperty().addListener((obs, old, newVal) -> {
-            int offset = newVal.intValue();
+        // Initialize Player — spawn at tile (1, 9) so it lands on first available floor
+        player = new Player(40, 360, 100, gameRoot, platforms, levelWidth, projectiles);
 
-            if (offset > 400 && offset < levelWidth - 400) {
-                gameRoot.setLayoutX(-(offset - 400));
+        // Camera: scroll gameRoot so the player stays centred horizontally
+        player.getEntity().translateXProperty().addListener((obs, oldVal, newVal) -> {
+            int offset = newVal.intValue();
+            if (offset > VIEW_WIDTH / 2 && offset < levelWidth - VIEW_WIDTH / 2) {
+                gameRoot.setLayoutX(-(offset - VIEW_WIDTH / 2));
             }
         });
+
+        // HUD lives in uiRoot so it is unaffected by camera scroll
+        hudLabel.setTranslateX(15);
+        hudLabel.setTranslateY(15);
+        hudLabel.setStyle("-fx-font-size: 14px; -fx-font-family: monospace; -fx-text-fill: black;");
+        uiRoot.getChildren().add(hudLabel);
 
         appRoot.getChildren().addAll(bg, gameRoot, uiRoot);
     }
 
-    // Game Loop
-    private void update() {
-        // Handle input
-        if (isPressed(KeyCode.W)) {
-            player.jump();
-        }
-        if (isPressed(KeyCode.A)) {
-            player.moveLeft();
-        }
-        if (isPressed(KeyCode.D)) {
-            player.moveRight();
-        }
-
-        // Update player physics
-        player.update();
-    }
-
-    // Initialize Entities
-    // TODO: Encapsulate better as player and platforms are of the same class, only differentiated because the platform entities are in an array
-    //  - Also would allow for use of sprites e.g. with ImageView (Subclass of Node).
-    private Node createEntity(int x, int y, int width, int height, Color color) {
-        Rectangle entity = new Rectangle(width, height);
-        entity.setTranslateX(x);
-        entity.setTranslateY(y);
-        entity.setFill(color);
-
-        gameRoot.getChildren().add(entity);
-        return entity;
-    }
-
-    private boolean isPressed(KeyCode key) {
-        return keys.getOrDefault(key, false);
-    }
-
     @Override
-    public void start(Stage mainStage) throws Exception {
+    public void start(Stage primaryStage) {
         initContent();
 
-        // Set GameScene
-        Scene scene = new Scene(appRoot);
-        scene.setOnKeyPressed(event -> keys.put(event.getCode(), true));
-        scene.setOnKeyReleased(event -> keys.put(event.getCode(), false));
-        mainStage.setTitle("WORMS 137");
-        mainStage.setScene(scene);
-        mainStage.show();
+        Weapon bazooka = new Weapon("Bazooka", true, 50);
 
-        // Timer and main game loop
-        AnimationTimer timer = new AnimationTimer() {
-            @Override
-            public void handle(long now) {
-                // Additional code is for 60 ticks of game loop. Modify update() for game stuff.
-                if (previousTime == 0) {
-                    previousTime = now;
-                    return;
-                }
+        Scene scene = new Scene(appRoot, VIEW_WIDTH, VIEW_HEIGHT);
 
-                float secondsElapsed = (now - previousTime) / 1e9f;
-                float secondsElapsedCapped = Math.min(secondsElapsed, Float.MAX_VALUE);
-                accumulatedTime += secondsElapsedCapped;
-                previousTime = now;
+        // Register Input Event Handlers
+        scene.setOnKeyPressed(e -> {
+            if (e.getCode() == KeyCode.A) leftPressed = true;
+            if (e.getCode() == KeyCode.D) rightPressed = true;
+            if (e.getCode() == KeyCode.W) player.jump();
 
-                while (accumulatedTime >= timeStep) {
-                    update();
-                    accumulatedTime -= timeStep;
-                }
-                // Add render call here if using GraphicsContext
+            // Aim angle control
+            if (e.getCode() == KeyCode.LEFT)  player.updateAim(-5);
+            if (e.getCode() == KeyCode.RIGHT) player.updateAim(5);
 
-                secondsElapsedSinceLastFpsUpdate += secondsElapsed;
-                framesSinceLastFpsUpdate++;
-                if (secondsElapsedSinceLastFpsUpdate >= 0.5f) {
-                    int fps = Math.round(framesSinceLastFpsUpdate / secondsElapsedSinceLastFpsUpdate);
-                    System.out.println(fps);
-                    secondsElapsedSinceLastFpsUpdate = 0;
-                    framesSinceLastFpsUpdate = 0;
-                }
+            // ENTER — enter aiming mode
+            if (e.getCode() == KeyCode.ENTER) player.startAiming(bazooka);
+
+            // SPACE pressed — begin charging power (only valid while AIMING)
+            if (e.getCode() == KeyCode.SPACE) player.startCharging();
+
+            if (e.getCode() == KeyCode.ESCAPE) player.cancelAim();
+        });
+
+        scene.setOnKeyReleased(e -> {
+            if (e.getCode() == KeyCode.A) leftPressed = false;
+            if (e.getCode() == KeyCode.D) rightPressed = false;
+
+            if (!leftPressed && !rightPressed) {
+                player.stopMovingState();
             }
-        };
 
-        timer.start();
+            // SPACE released — fire at current charge level
+            if (e.getCode() == KeyCode.SPACE) player.releaseCharge();
+        });
+
+        // Game Loop Engine Execution Loop
+        final long startNanoTime = System.nanoTime();
+        new AnimationTimer() {
+            private long lastFrameTime = System.nanoTime();
+
+            @Override
+            public void handle(long currentNanoTime) {
+                double deltaTime = (currentNanoTime - lastFrameTime) / 1_000_000_000.0;
+                lastFrameTime = currentNanoTime;
+
+                // Process continuous lateral translation updates
+                if (leftPressed) player.moveLeft(deltaTime);
+                if (rightPressed) player.moveRight(deltaTime);
+
+                // Run State Upkeep
+                player.update(deltaTime);
+
+                // Update active projectile array list loops backward to safely clear dropped entities
+                for (int i = projectiles.size() - 1; i >= 0; i--) {
+                    Projectile p = projectiles.get(i);
+                    p.update();
+                    if (!p.isActive()) {
+                        projectiles.remove(i);
+                    }
+                }
+
+                // Render dynamic HUD telemetry output
+                hudLabel.setText(String.format(
+                    "State: %s\nTurn Clock: %.1fs\nMove Fuel Remaining: %.1fs\nAim Hemisphere Angle: %.0f°\nCharge Output: %.0f",
+                    player.getCurrentState(),
+                    player.getTurnTimeRemaining(),
+                    player.getMovementTimeRemaining(),
+                    player.getAimAngle(),
+                    player.getShootPower()
+                ));
+            }
+        }.start();
+
+        primaryStage.setTitle("Worms Engine Test Environment");
+        primaryStage.setScene(scene);
+        primaryStage.setResizable(false);
+        primaryStage.show();
     }
 
     public static void main(String[] args) {
