@@ -14,13 +14,12 @@ public class Projectile {
     private Pane    gameRoot;
     private ArrayList<Node>   platforms;
     private ArrayList<Player> players;
-    private Node    remoteGhost; // Track remote player target rectangle
+    private Node    remoteGhost; 
     private Player  shooter;
     private int     damage;
     private boolean active = true;
 
     private BiConsumer<Player, Integer> onHitPlayer;
-
     private static final double GRAVITY = 0.3;
 
     public Projectile(double startX, double startY, double angleDegrees, double power,
@@ -52,7 +51,6 @@ public class Projectile {
         sprite.setTranslateX(sprite.getTranslateX() + velocity.getX());
         sprite.setTranslateY(sprite.getTranslateY() + velocity.getY());
 
-        // Platform collision
         for (Node platform : platforms) {
             if (sprite.getBoundsInParent().intersects(platform.getBoundsInParent())) {
                 destroy();
@@ -60,11 +58,9 @@ public class Projectile {
             }
         }
 
-        // Remote Player hit check (Checking intersection directly against the remoteGhost)
         if (remoteGhost != null && remoteGhost.isVisible()) {
             if (sprite.getBoundsInParent().intersects(remoteGhost.getBoundsInParent())) {
                 if (onHitPlayer != null) {
-                    // Pass null as the target player object, Main's handler safely processes network broadcast
                     onHitPlayer.accept(null, damage); 
                 }
                 destroy();
@@ -72,7 +68,6 @@ public class Projectile {
             }
         }
 
-        // Local Player hit (In case of self damage or multiple local players setup)
         for (Player p : players) {
             if (p == shooter) continue;
             if (sprite.getBoundsInParent().intersects(p.getEntity().getBoundsInParent())) {
@@ -82,7 +77,6 @@ public class Projectile {
             }
         }
 
-        // Out of bounds
         if (sprite.getTranslateY() > 800 ||
             sprite.getTranslateX() < 0   ||
             sprite.getTranslateX() > 1200) {
@@ -98,4 +92,6 @@ public class Projectile {
     }
 
     public boolean isActive() { return active; }
+    
+    public Player getShooter() { return shooter; }
 }

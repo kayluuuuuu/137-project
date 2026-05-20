@@ -12,7 +12,7 @@ public class Player {
     private Node entity;
     private int hp;
     private int maxHp;
-    private boolean isDead = false; // Track death status
+    private boolean isDead = false; 
 
     private Rectangle hpBarBg;
     private Rectangle hpBarFill;
@@ -25,7 +25,7 @@ public class Player {
     private int levelWidth;
     private ArrayList<Node> platforms;
     private Pane gameRoot;
-    private Pane uiRoot; // Keep track of uiRoot to remove HP bar elements
+    private Pane uiRoot; 
 
     private double turnTimer = 0;
     private static final double TURN_TIME_LIMIT    = 60.0;
@@ -302,8 +302,23 @@ public class Player {
         }
     }
 
+    private void updateAimArrow() {
+        double centerX = entity.getTranslateX() + (WIDTH  / 2.0);
+        double centerY = entity.getTranslateY() + (HEIGHT / 2.0);
+        double rad     = Math.toRadians(aimAngle);
+
+        aimLine.setStartX(centerX);
+        aimLine.setStartY(centerY);
+        aimLine.setEndX(centerX + Math.cos(rad) * 40);
+        aimLine.setEndY(centerY + Math.sin(rad) * 40);
+    }
+
     public void stopMovingState() {
         if (currentState == ActionState.MOVING) setActionState(ActionState.IDLE);
+    }
+
+    private void setActionState(ActionState s) { 
+        this.currentState = s; 
     }
 
     public Node        getEntity()               { return entity; }
