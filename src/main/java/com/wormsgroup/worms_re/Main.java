@@ -30,7 +30,7 @@ public class Main extends Application {
     // Game state
     private ArrayList<Node>       platforms   = new ArrayList<>();
     private ArrayList<Projectile> projectiles = new ArrayList<>();
-    private ArrayList<Player>     allPlayers  = new ArrayList<>(); // field, populated in initContent()
+    private ArrayList<Player>     allPlayers  = new ArrayList<>(); 
     private Player player;
     private int levelWidth;
 
@@ -84,27 +84,27 @@ public class Main extends Application {
             }
         }
 
-        // Build allPlayers first (empty), pass reference into Player constructor.
-        // Player adds itself after construction — or we add it here right after.
-        player = new Player(40, 360, 100, gameRoot, uiRoot, platforms, levelWidth,
-                            projectiles, allPlayers);
-        allPlayers.add(player);
-
-        // When a local projectile hits the remote player:
-        //   1. Apply damage to the local ghost so the bar updates immediately
-        //   2. Broadcast "HIT:n" so the peer applies it to themselves (authoritative HP)
-        player.setHitCallback((hitPlayer, damage) -> {
-            hitPlayer.takeDamage(damage);
-            if (networkManager != null) {
-                networkManager.sendData("HIT:" + damage);
-            }
-        });
-
-        // Remote ghost sprite
+        // Remote ghost sprite initialized FIRST so we can pass it to Player
         remoteGhost = new Rectangle(20, 20, Color.RED);
         remoteGhost.setOpacity(0.6);
         remoteGhost.setVisible(false);
         gameRoot.getChildren().add(remoteGhost);
+
+        // Build allPlayers and pass remoteGhost reference into Player constructor
+        player = new Player(40, 360, 100, gameRoot, uiRoot, platforms, levelWidth,
+                            projectiles, allPlayers, remoteGhost);
+        allPlayers.add(player);
+
+        // When a local projectile hits the remote player ghost:
+        // Broadcast "HIT:n" so the peer applies it to themselves (authoritative HP)
+        player.setHitCallback((hitPlayer, damage) -> {
+            if (hitPlayer != null) {
+                hitPlayer.takeDamage(damage);
+            }
+            if (networkManager != null) {
+                networkManager.sendData("HIT:" + damage);
+            }
+        });
 
         // Remote HP bar
         remoteHpBarBg   = new Rectangle(40, 5, Color.DARKGRAY);
@@ -181,12 +181,8 @@ public class Main extends Application {
         });
     }
 
-    // Protocol:
-    //   "x,y,hp"   — remote player position + their current HP
-    //   "HIT:n"    — remote player scored a hit on us for n damage
     private void handleNetworkMessage(String message) {
         if (message.startsWith("HIT:")) {
-            // Peer confirmed they hit us — apply to local player (authoritative)
             try {
                 int dmg = Integer.parseInt(message.substring(4));
                 player.takeDamage(dmg);
@@ -200,7 +196,6 @@ public class Main extends Application {
                 remoteGhost.setTranslateX(Double.parseDouble(parts[0]));
                 remoteGhost.setTranslateY(Double.parseDouble(parts[1]));
                 remoteGhost.setVisible(true);
-                // Sync remote HP from peer's authoritative value
                 remoteHp = Double.parseDouble(parts[2]);
             } catch (NumberFormatException ignored) {}
         }
@@ -326,7 +321,6 @@ public class Main extends Application {
         new AnimationTimer() {
             @Override
             public void handle(long now) {
-                // First frame — just record time and return
                 if (previousTime == 0) {
                     previousTime = now;
                     return;
@@ -336,13 +330,11 @@ public class Main extends Application {
                 accumulatedTime += secondsElapsed;
                 previousTime = now;
 
-                // Consume accumulated time in fixed 60Hz ticks
                 while (accumulatedTime >= TIMESTEP) {
                     tick(TIMESTEP);
                     accumulatedTime -= TIMESTEP;
                 }
 
-                // Per-render updates — HUD and HP bars only need once per frame
                 player.updateHpBar(gameRoot.getLayoutX());
                 updateRemoteHpBar();
                 hudLabel.setText(String.format(
@@ -355,7 +347,6 @@ public class Main extends Application {
                     player.getShootPower()
                 ));
 
-                // FPS log every 0.5s
                 secondsSinceLastFpsLog += secondsElapsed;
                 framesSinceLastFpsLog++;
                 if (secondsSinceLastFpsLog >= 0.5f) {
@@ -372,7 +363,6 @@ public class Main extends Application {
         primaryStage.show();
     }
 
-    // Fixed-timestep game logic — called 60x/sec regardless of render rate
     private void tick(float dt) {
         if (leftPressed)  player.moveLeft(dt);
         if (rightPressed) player.moveRight(dt);
@@ -388,9 +378,6 @@ public class Main extends Application {
         broadcastState();
     }
 
-    // -------------------------------------------------------------------------
-    // Launcher UI helpers
-    // -------------------------------------------------------------------------
     private javafx.scene.control.Label styledLabel(String text) {
         var lbl = new javafx.scene.control.Label(text);
         lbl.setTextFill(Color.web("#b4b4d0"));

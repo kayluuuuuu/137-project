@@ -13,7 +13,6 @@ public class Player {
     private int hp;
     private int maxHp;
 
-    // HP bar nodes — live in uiRoot, repositioned each frame
     private Rectangle hpBarBg;
     private Rectangle hpBarFill;
     private static final int HP_BAR_WIDTH  = 40;
@@ -47,8 +46,8 @@ public class Player {
     private Line aimLine;
     private ArrayList<Projectile> activeProjectiles;
     private ArrayList<Player>     allPlayers;
+    private Node remoteGhost; // Added reference holder
 
-    // Set by Main so it can intercept hits and decide network vs local damage
     private java.util.function.BiConsumer<Player, Integer> hitCallback = null;
     public void setHitCallback(java.util.function.BiConsumer<Player, Integer> cb) { this.hitCallback = cb; }
 
@@ -63,7 +62,7 @@ public class Player {
                   Pane gameRoot, Pane uiRoot,
                   ArrayList<Node> platforms, int levelWidth,
                   ArrayList<Projectile> activeProjectiles,
-                  ArrayList<Player> allPlayers) {
+                  ArrayList<Player> allPlayers, Node remoteGhost) { // Constructor updated
         this.hp                 = hp;
         this.maxHp              = hp;
         this.gameRoot           = gameRoot;
@@ -72,8 +71,8 @@ public class Player {
         this.movementTimeRemaining = MAX_MOVEMENT_TIME;
         this.activeProjectiles  = activeProjectiles;
         this.allPlayers         = allPlayers;
+        this.remoteGhost        = remoteGhost;
 
-        // Player sprite
         Rectangle rect = new Rectangle(WIDTH, HEIGHT);
         rect.setTranslateX(startX);
         rect.setTranslateY(startY);
@@ -81,20 +80,17 @@ public class Player {
         this.entity = rect;
         gameRoot.getChildren().add(entity);
 
-        // Aim line
         aimLine = new Line();
         aimLine.setStroke(Color.GOLD);
         aimLine.setStrokeWidth(2);
         aimLine.setVisible(false);
         gameRoot.getChildren().add(aimLine);
 
-        // HP bar
         hpBarBg   = new Rectangle(HP_BAR_WIDTH, HP_BAR_HEIGHT, Color.DARKGRAY);
         hpBarFill = new Rectangle(HP_BAR_WIDTH, HP_BAR_HEIGHT, Color.LIMEGREEN);
         uiRoot.getChildren().addAll(hpBarBg, hpBarFill);
     }
 
-    // Called every frame — pass gameRoot.getLayoutX() as cameraOffsetX
     public void updateHpBar(double cameraOffsetX) {
         double screenX = entity.getTranslateX() + cameraOffsetX;
         double screenY = entity.getTranslateY() - 10;
@@ -230,10 +226,11 @@ public class Player {
         double spawnY  = entity.getTranslateY() + (HEIGHT / 2.0);
         int    damage  = (currentWeapon != null) ? currentWeapon.getDamage() : 10;
 
+        // Projectile setup now passes down the remoteGhost node
         Projectile proj = new Projectile(
             spawnX, spawnY, aimAngle, shootPower,
-            gameRoot, platforms, allPlayers, this, damage,
-            hitCallback   // Main wires this to broadcast damage over network
+            gameRoot, platforms, allPlayers, remoteGhost, this, damage,
+            hitCallback   
         );
         activeProjectiles.add(proj);
 

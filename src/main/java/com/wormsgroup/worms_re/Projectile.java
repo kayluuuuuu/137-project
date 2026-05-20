@@ -14,23 +14,23 @@ public class Projectile {
     private Pane    gameRoot;
     private ArrayList<Node>   platforms;
     private ArrayList<Player> players;
+    private Node    remoteGhost; // Track remote player target rectangle
     private Player  shooter;
     private int     damage;
     private boolean active = true;
 
-    // Called on hit: (hitPlayer, damageAmount)
-    // Main uses this to apply damage locally AND broadcast "HIT:n" to the peer
     private BiConsumer<Player, Integer> onHitPlayer;
 
     private static final double GRAVITY = 0.3;
 
     public Projectile(double startX, double startY, double angleDegrees, double power,
                       Pane gameRoot, ArrayList<Node> platforms,
-                      ArrayList<Player> players, Player shooter, int damage,
+                      ArrayList<Player> players, Node remoteGhost, Player shooter, int damage,
                       BiConsumer<Player, Integer> onHitPlayer) {
         this.gameRoot     = gameRoot;
         this.platforms    = platforms;
         this.players      = players;
+        this.remoteGhost  = remoteGhost;
         this.shooter      = shooter;
         this.damage       = damage;
         this.onHitPlayer  = onHitPlayer;
@@ -60,7 +60,19 @@ public class Projectile {
             }
         }
 
-        // Player hit — delegate to callback instead of calling takeDamage directly
+        // Remote Player hit check (Checking intersection directly against the remoteGhost)
+        if (remoteGhost != null && remoteGhost.isVisible()) {
+            if (sprite.getBoundsInParent().intersects(remoteGhost.getBoundsInParent())) {
+                if (onHitPlayer != null) {
+                    // Pass null as the target player object, Main's handler safely processes network broadcast
+                    onHitPlayer.accept(null, damage); 
+                }
+                destroy();
+                return;
+            }
+        }
+
+        // Local Player hit (In case of self damage or multiple local players setup)
         for (Player p : players) {
             if (p == shooter) continue;
             if (sprite.getBoundsInParent().intersects(p.getEntity().getBoundsInParent())) {
