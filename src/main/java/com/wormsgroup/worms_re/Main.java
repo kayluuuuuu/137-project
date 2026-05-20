@@ -47,7 +47,7 @@ public class Main extends Application {
     private Label netLabel = new Label();
     private Label victoryLabel = new Label(); // Overlay for end-game notifications
 
-    private Rectangle      remoteGhost;
+    private javafx.scene.image.ImageView remoteGhost;
     private Rectangle      remoteHpBarBg;
     private Rectangle      remoteHpBarFill;
     private NetworkManager networkManager;
@@ -91,8 +91,10 @@ public class Main extends Application {
             }
         }
 
-        remoteGhost = new Rectangle(20, 20, Color.RED);
-        remoteGhost.setOpacity(0.6);
+        javafx.scene.image.Image redIdleImg = new javafx.scene.image.Image(getClass().getResourceAsStream("Red and Blue Characters/Red Character Idle 1.png"));
+        remoteGhost = new javafx.scene.image.ImageView(redIdleImg);
+        remoteGhost.setFitWidth(20);
+        remoteGhost.setFitHeight(20);
         remoteGhost.setVisible(false);
         gameRoot.getChildren().add(remoteGhost);
 

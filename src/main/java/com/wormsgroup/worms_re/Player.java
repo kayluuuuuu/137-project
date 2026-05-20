@@ -10,6 +10,12 @@ import java.util.ArrayList;
 
 public class Player {
     private Node entity;
+    private javafx.scene.image.ImageView imageView;
+    private javafx.scene.image.Image idleImg, run1Img, run2Img, jumpImg;
+    private boolean isFacingRight = true;
+    private double animTimer = 0;
+    private int runFrame = 1;
+
     private int hp;
     private int maxHp;
     private boolean isDead = false; 
@@ -74,11 +80,18 @@ public class Player {
         this.allPlayers         = allPlayers;
         this.remoteGhost        = remoteGhost;
 
-        Rectangle rect = new Rectangle(WIDTH, HEIGHT);
-        rect.setTranslateX(startX);
-        rect.setTranslateY(startY);
-        rect.setFill(Color.BLUE);
-        this.entity = rect;
+        idleImg = new javafx.scene.image.Image(getClass().getResourceAsStream("Red and Blue Characters/Blue Character Idle 1.png"));
+        run1Img = new javafx.scene.image.Image(getClass().getResourceAsStream("Red and Blue Characters/Blue Character Run 1.png"));
+        run2Img = new javafx.scene.image.Image(getClass().getResourceAsStream("Red and Blue Characters/Blue Character Run 2.png"));
+        jumpImg = new javafx.scene.image.Image(getClass().getResourceAsStream("Red and Blue Characters/Blue Character Jump.png"));
+
+        imageView = new javafx.scene.image.ImageView(idleImg);
+        imageView.setFitWidth(WIDTH);
+        imageView.setFitHeight(HEIGHT);
+        imageView.setTranslateX(startX);
+        imageView.setTranslateY(startY);
+        
+        this.entity = imageView;
         gameRoot.getChildren().add(entity);
 
         aimLine = new Line();
@@ -113,6 +126,21 @@ public class Player {
 
     public void update(double deltaTime) {
         if (isDead) return;
+
+        if (!canJump) {
+            imageView.setImage(jumpImg);
+        } else if (currentState == ActionState.MOVING) {
+            animTimer += deltaTime;
+            if (animTimer > 0.1) {
+                animTimer = 0;
+                runFrame = (runFrame == 1) ? 2 : 1;
+                imageView.setImage(runFrame == 1 ? run1Img : run2Img);
+            }
+        } else {
+            imageView.setImage(idleImg);
+        }
+
+        imageView.setScaleX(isFacingRight ? 1 : -1);
 
         switch (currentState) {
             case IDLE:
@@ -272,6 +300,7 @@ public class Player {
 
     private void moveX(int val) {
         boolean movingRight = val > 0;
+        isFacingRight = movingRight;
         for (int i = 0; i < Math.abs(val); i++) {
             entity.setTranslateX(entity.getTranslateX() + (movingRight ? 1 : -1));
             for (Node platform : platforms) {
@@ -306,6 +335,12 @@ public class Player {
         double centerX = entity.getTranslateX() + (WIDTH  / 2.0);
         double centerY = entity.getTranslateY() + (HEIGHT / 2.0);
         double rad     = Math.toRadians(aimAngle);
+
+        if (aimAngle < -90) {
+            isFacingRight = false;
+        } else {
+            isFacingRight = true;
+        }
 
         aimLine.setStartX(centerX);
         aimLine.setStartY(centerY);
