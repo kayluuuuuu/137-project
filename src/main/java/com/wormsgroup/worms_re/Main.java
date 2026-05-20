@@ -93,7 +93,7 @@ public class Main extends Application {
         }
 
         // --- FIXED: Load your character asset for the remote opponent instead of a red block ---
-        var remoteStream = getClass().getResourceAsStream("player_icon.png"); 
+        var remoteStream = getClass().getResourceAsStream("Red and Blue Characters/Red Character Idle 1.png"); 
         if (remoteStream != null) {
             remoteGhost = new ImageView(new Image(remoteStream));
             remoteGhost.setFitWidth(20);  
