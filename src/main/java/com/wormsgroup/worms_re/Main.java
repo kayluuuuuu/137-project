@@ -24,30 +24,36 @@ public class Main extends Application {
     private static final int VIEW_WIDTH  = 800;
     private static final int VIEW_HEIGHT = 600;
 
+    // Scene layer hierarchy
     private Pane appRoot  = new Pane();
     private Pane gameRoot = new Pane();
     private Pane uiRoot   = new Pane();
 
+    // Game state
     private ArrayList<Node>       platforms   = new ArrayList<>();
     private ArrayList<Projectile> projectiles = new ArrayList<>();
     private ArrayList<Player>     allPlayers  = new ArrayList<>(); 
     private Player player;
     private int levelWidth;
 
+    // Input state
     private boolean leftPressed  = false;
     private boolean rightPressed = false;
 
+    // Fixed-timestep game loop (60 ticks/sec)
     private static final float TIMESTEP    = 1.0f / 60.0f;
     private float  accumulatedTime         = 0;
     private long   previousTime            = 0;
     private float  secondsSinceLastFpsLog  = 0;
     private int    framesSinceLastFpsLog   = 0;
 
+    // HUD labels
     private Label hudLabel = new Label();
     private Label netLabel = new Label();
-    private Label victoryLabel = new Label(); // Overlay for end-game notifications
+    private Label victoryLabel = new Label(); 
 
-    private javafx.scene.image.ImageView remoteGhost;
+    // Multiplayer tracking variables - remoteGhost upgraded from Rectangle to ImageView
+    private ImageView      remoteGhost;
     private Rectangle      remoteHpBarBg;
     private Rectangle      remoteHpBarFill;
     private NetworkManager networkManager;
@@ -56,28 +62,23 @@ public class Main extends Application {
     private boolean remoteDead = false;
     private boolean gameFinished = false;
 
+    // Turn control system
     private boolean isMyTurn = false; 
 
-    // Predefined safe coordinates on top of green tiles
-    private static final Point2D[] SPAWN_POINTS = {
-        new Point2D(80, 360),
-        new Point2D(240, 200),
-        new Point2D(400, 360),
-        new Point2D(600, 160),
-        new Point2D(720, 400),
-        new Point2D(900, 240)
-    };
-
+    // -------------------------------------------------------------------------
+    // Level + player setup
+    // -------------------------------------------------------------------------
     private void initContent() {
         var stream = getClass().getResourceAsStream("background.jpg");
         if (stream == null) {
-            throw new RuntimeException("background.jpg not found — check resources!");
+            throw new RuntimeException(
+                "background.jpg not found — check src/main/resources/com/wormsgroup/worms_re/"); //
         }
         ImageView bg = new ImageView(new Image(stream));
         bg.setFitWidth(VIEW_WIDTH);
         bg.setFitHeight(VIEW_HEIGHT);
 
-        levelWidth = LevelData.LEVEL1[0].length() * TILE_SIZE;
+        levelWidth = LevelData.LEVEL1[0].length() * TILE_SIZE; //
         for (int row = 0; row < LevelData.LEVEL1.length; row++) {
             String line = LevelData.LEVEL1[row];
             for (int col = 0; col < line.length(); col++) {
@@ -91,40 +92,50 @@ public class Main extends Application {
             }
         }
 
-        javafx.scene.image.Image redIdleImg = new javafx.scene.image.Image(getClass().getResourceAsStream("Red and Blue Characters/Red Character Idle 1.png"));
-        remoteGhost = new javafx.scene.image.ImageView(redIdleImg);
-        remoteGhost.setFitWidth(20);
-        remoteGhost.setFitHeight(20);
+        // --- FIXED: Load your character asset for the remote opponent instead of a red block ---
+        var remoteStream = getClass().getResourceAsStream("player_icon.png"); 
+        if (remoteStream != null) {
+            remoteGhost = new ImageView(new Image(remoteStream));
+            remoteGhost.setFitWidth(20);  
+            remoteGhost.setFitHeight(20); 
+        } else {
+            // Fallback to an empty instance framework safely if there's a file structure error
+            remoteGhost = new ImageView(); 
+        }
         remoteGhost.setVisible(false);
         gameRoot.getChildren().add(remoteGhost);
 
-        player = new Player(40, 360, 100, gameRoot, uiRoot, platforms, levelWidth,
-                            projectiles, allPlayers, remoteGhost);
-        allPlayers.add(player);
+        // Initialize Player with all 10 constructor arguments
+        player = new Player(0, 0, 100, gameRoot, uiRoot, platforms, levelWidth,
+                            projectiles, allPlayers, remoteGhost); 
+        allPlayers.add(player); //
 
         player.setHitCallback((hitPlayer, damage) -> {
             if (hitPlayer != null) {
-                hitPlayer.takeDamage(damage);
+                hitPlayer.takeDamage(damage); 
             }
             if (networkManager != null) {
-                networkManager.sendData("HIT:" + damage);
+                networkManager.sendData("HIT:" + damage); //
             }
         });
 
+        // Remote HP bar initialization setups
         remoteHpBarBg   = new Rectangle(40, 5, Color.DARKGRAY);
         remoteHpBarFill = new Rectangle(40, 5, Color.LIMEGREEN);
         remoteHpBarBg.setVisible(false);
         remoteHpBarFill.setVisible(false);
         uiRoot.getChildren().addAll(remoteHpBarBg, remoteHpBarFill);
 
+        // Camera track movement tracking update boundaries
         player.getEntity().translateXProperty().addListener((obs, oldVal, newVal) -> {
-            if (player.isDead()) return;
+            if (gameFinished) return;
             int offset = newVal.intValue();
             if (offset > VIEW_WIDTH / 2 && offset < levelWidth - VIEW_WIDTH / 2) {
                 gameRoot.setLayoutX(-(offset - VIEW_WIDTH / 2));
             }
         });
 
+        // HUD Layout
         hudLabel.setTranslateX(15);
         hudLabel.setTranslateY(15);
         hudLabel.setStyle("-fx-font-size: 14px; -fx-font-family: monospace; -fx-text-fill: white;");
@@ -132,63 +143,69 @@ public class Main extends Application {
         netLabel.setTranslateX(15);
         netLabel.setTranslateY(185);
         netLabel.setStyle("-fx-font-size: 12px; -fx-font-family: monospace; -fx-text-fill: #00ffcc;");
-        netLabel.setText("Network: initialising...");
+        netLabel.setText("Network: initialising..."); //
 
         victoryLabel.setPrefWidth(VIEW_WIDTH);
         victoryLabel.setTranslateY(VIEW_HEIGHT / 2.0 - 40);
         victoryLabel.setAlignment(javafx.geometry.Pos.CENTER);
         victoryLabel.setVisible(false);
 
-        uiRoot.getChildren().addAll(hudLabel, netLabel, victoryLabel);
-        appRoot.getChildren().addAll(bg, gameRoot, uiRoot);
+        uiRoot.getChildren().addAll(hudLabel, netLabel, victoryLabel); //
+        appRoot.getChildren().addAll(bg, gameRoot, uiRoot); //
     }
 
+    // -------------------------------------------------------------------------
+    // HP bar — remote ghost positioning calculations
+    // -------------------------------------------------------------------------
     private void updateRemoteHpBar() {
         if (!remoteGhost.isVisible() || remoteDead) {
             remoteHpBarBg.setVisible(false);
             remoteHpBarFill.setVisible(false);
             return;
         }
-        double screenX = remoteGhost.getTranslateX() + gameRoot.getLayoutX();
-        double screenY = remoteGhost.getTranslateY() - 10;
-        double ratio   = remoteHp / remoteMaxHp;
 
-        remoteHpBarBg.setTranslateX(screenX);
-        remoteHpBarBg.setTranslateY(screenY);
-        remoteHpBarBg.setVisible(true);
+        double screenX = remoteGhost.getTranslateX() + gameRoot.getLayoutX(); //
+        double screenY = remoteGhost.getTranslateY() - 10; //
+        double ratio   = remoteHp / remoteMaxHp; //
 
-        remoteHpBarFill.setWidth(40 * ratio);
-        remoteHpBarFill.setTranslateX(screenX);
-        remoteHpBarFill.setTranslateY(screenY);
-        remoteHpBarFill.setVisible(true);
+        remoteHpBarBg.setTranslateX(screenX); //
+        remoteHpBarBg.setTranslateY(screenY); //
+        remoteHpBarBg.setVisible(true); //
 
-        if (ratio > 0.5)       remoteHpBarFill.setFill(Color.LIMEGREEN);
-        else if (ratio > 0.25) remoteHpBarFill.setFill(Color.YELLOW);
-        else                   remoteHpBarFill.setFill(Color.RED);
+        remoteHpBarFill.setWidth(40 * ratio); //
+        remoteHpBarFill.setTranslateX(screenX); //
+        remoteHpBarFill.setTranslateY(screenY); //
+        remoteHpBarFill.setVisible(true); //
+
+        if (ratio > 0.5)       remoteHpBarFill.setFill(Color.LIMEGREEN); //
+        else if (ratio > 0.25) remoteHpBarFill.setFill(Color.YELLOW); //
+        else                   remoteHpBarFill.setFill(Color.RED); //
     }
 
+    // -------------------------------------------------------------------------
+    // Networking initialization systems
+    // -------------------------------------------------------------------------
     private void initNetwork(Stage primaryStage, int localPort, String peerIp, int peerPort) {
         try {
             networkManager = new NetworkManager(localPort, message ->
                 Platform.runLater(() -> handleNetworkMessage(message))
-            );
-            networkManager.startListening();
-            networkManager.setPeer(peerIp, peerPort);
-            netLabel.setText("Network: :" + localPort + " → " + peerIp + ":" + peerPort);
+            ); //
+            networkManager.startListening(); //
+            networkManager.setPeer(peerIp, peerPort); //
+            netLabel.setText("Network: :" + localPort + " → " + peerIp + ":" + peerPort); //
         } catch (SocketException | UnknownHostException e) {
-            netLabel.setText("Network: failed — " + e.getMessage());
-            e.printStackTrace();
+            netLabel.setText("Network: failed — " + e.getMessage()); //
+            e.printStackTrace(); //
         }
 
         primaryStage.setOnCloseRequest(e -> {
-            if (networkManager != null) networkManager.close();
+            if (networkManager != null) networkManager.close(); //
         });
     }
 
     private void handleNetworkMessage(String message) {
         if (gameFinished) return;
 
-        // Extract randomized initial locations sent from Player 1
         if (message.startsWith("SPAWN:")) {
             try {
                 String data = message.substring(6);
@@ -220,39 +237,39 @@ public class Main extends Application {
             return;
         }
 
-        if (message.startsWith("HIT:")) {
+        if (message.startsWith("HIT:")) { //
             try {
-                int dmg = Integer.parseInt(message.substring(4));
-                player.takeDamage(dmg);
-            } catch (NumberFormatException ignored) {}
+                int dmg = Integer.parseInt(message.substring(4)); //
+                player.takeDamage(dmg); //
+            } catch (NumberFormatException ignored) {} //
             return;
         }
 
-        String[] parts = message.split(",");
-        if (parts.length >= 3) {
+        String[] parts = message.split(","); //
+        if (parts.length >= 3) { //
             try {
                 double rx = Double.parseDouble(parts[0]);
                 double ry = Double.parseDouble(parts[1]);
-                remoteHp = Double.parseDouble(parts[2]);
+                remoteHp = Double.parseDouble(parts[2]); //
 
                 if (remoteHp <= 0 && !remoteDead) {
                     remoteDead = true;
                     remoteGhost.setVisible(false);
                 } else if (!remoteDead) {
-                    remoteGhost.setTranslateX(rx);
-                    remoteGhost.setTranslateY(ry);
-                    remoteGhost.setVisible(true);
+                    remoteGhost.setTranslateX(rx); //
+                    remoteGhost.setTranslateY(ry); //
+                    remoteGhost.setVisible(true); //
                 }
-            } catch (NumberFormatException ignored) {}
+            } catch (NumberFormatException ignored) {} //
         }
     }
 
     private void broadcastState() {
-        if (networkManager == null) return;
+        if (networkManager == null) return; //
         networkManager.sendData(
-            player.getEntity().getTranslateX() + "," +
-            player.getEntity().getTranslateY() + "," +
-            player.getHp()
+            player.getEntity().getTranslateX() + "," + //
+            player.getEntity().getTranslateY() + "," + //
+            player.getHp() //
         );
     }
 
@@ -285,111 +302,115 @@ public class Main extends Application {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Launcher UI Configs
+    // -------------------------------------------------------------------------
     @Override
     public void start(Stage primaryStage) {
-        var rawArgs = getParameters().getRaw();
-        if (rawArgs.size() >= 3) {
+        var rawArgs = getParameters().getRaw(); //
+        if (rawArgs.size() >= 3) { //
             try {
                 startGame(primaryStage,
-                    Integer.parseInt(rawArgs.get(0)),
-                    rawArgs.get(1),
-                    Integer.parseInt(rawArgs.get(2)));
+                    Integer.parseInt(rawArgs.get(0)), //
+                    rawArgs.get(1), //
+                    Integer.parseInt(rawArgs.get(2))); //
                 return;
             } catch (NumberFormatException e) {
-                System.out.println("Invalid CLI args, showing launcher.");
+                System.out.println("Invalid CLI args, showing launcher."); //
             }
         }
 
-        Stage launcher = new Stage();
-        launcher.setTitle("WORMS RE — Multiplayer Launcher");
+        Stage launcher = new Stage(); //
+        launcher.setTitle("WORMS RE — Multiplayer Launcher"); //
 
-        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
-        grid.setAlignment(javafx.geometry.Pos.CENTER);
-        grid.setHgap(15);
-        grid.setVgap(15);
-        grid.setPadding(new javafx.geometry.Insets(25));
-        grid.setStyle("-fx-background-color: #1a1a24;");
+        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane(); //
+        grid.setAlignment(javafx.geometry.Pos.CENTER); //
+        grid.setHgap(15); //
+        grid.setVgap(15); //
+        grid.setPadding(new javafx.geometry.Insets(25)); //
+        grid.setStyle("-fx-background-color: #1a1a24;"); //
 
-        javafx.scene.text.Text title = new javafx.scene.text.Text("WORMS RE");
-        title.setFont(javafx.scene.text.Font.font("System", javafx.scene.text.FontWeight.BOLD, 26));
-        title.setFill(Color.web("#ff4a5a"));
-        grid.add(title, 0, 0, 2, 1);
+        javafx.scene.text.Text title = new javafx.scene.text.Text("WORMS RE"); //
+        title.setFont(javafx.scene.text.Font.font("System", javafx.scene.text.FontWeight.BOLD, 26)); //
+        title.setFill(Color.web("#ff4a5a")); //
+        grid.add(title, 0, 0, 2, 1); //
 
-        javafx.scene.text.Text subtitle = new javafx.scene.text.Text("Multiplayer Lobby Setup");
-        subtitle.setFont(javafx.scene.text.Font.font("System", javafx.scene.text.FontWeight.NORMAL, 14));
-        subtitle.setFill(Color.web("#8b8ba8"));
-        grid.add(subtitle, 0, 1, 2, 1);
+        javafx.scene.text.Text subtitle = new javafx.scene.text.Text("Multiplayer Lobby Setup"); //
+        subtitle.setFont(javafx.scene.text.Font.font("System", javafx.scene.text.FontWeight.NORMAL, 14)); //
+        subtitle.setFill(Color.web("#8b8ba8")); //
+        grid.add(subtitle, 0, 1, 2, 1); //
 
-        javafx.scene.control.TextField localPortField = styledField("5000");
-        javafx.scene.control.TextField peerIpField    = styledField("127.0.0.1");
-        javafx.scene.control.TextField peerPortField  = styledField("5000");
+        javafx.scene.control.TextField localPortField = styledField("5000"); //
+        javafx.scene.control.TextField peerIpField    = styledField("127.0.0.1"); //
+        javafx.scene.control.TextField peerPortField  = styledField("5000"); //
 
-        grid.add(styledLabel("Your Port (Listen):"), 0, 2); grid.add(localPortField, 1, 2);
-        grid.add(styledLabel("Peer IP Address:"),    0, 3); grid.add(peerIpField,    1, 3);
-        grid.add(styledLabel("Peer Port:"),          0, 4); grid.add(peerPortField,  1, 4);
+        grid.add(styledLabel("Your Port (Listen):"), 0, 2); grid.add(localPortField, 1, 2); //
+        grid.add(styledLabel("Peer IP Address:"),    0, 3); grid.add(peerIpField,    1, 3); //
+        grid.add(styledLabel("Peer Port:"),          0, 4); grid.add(peerPortField,  1, 4); //
 
-        javafx.scene.layout.HBox presets = new javafx.scene.layout.HBox(10);
-        presets.setAlignment(javafx.geometry.Pos.CENTER);
-        javafx.scene.control.Button p1Btn = presetButton("Preset: Player 1");
-        p1Btn.setOnAction(e -> { localPortField.setText("5000"); peerIpField.setText("127.0.0.1"); peerPortField.setText("5001"); });
-        javafx.scene.control.Button p2Btn = presetButton("Preset: Player 2");
-        p2Btn.setOnAction(e -> { localPortField.setText("5001"); peerIpField.setText("127.0.0.1"); peerPortField.setText("5000"); });
-        presets.getChildren().addAll(p1Btn, p2Btn);
-        grid.add(presets, 0, 5, 2, 1);
+        javafx.scene.layout.HBox presets = new javafx.scene.layout.HBox(10); //
+        presets.setAlignment(javafx.geometry.Pos.CENTER); //
+        javafx.scene.control.Button p1Btn = presetButton("Preset: Player 1"); //
+        p1Btn.setOnAction(e -> { localPortField.setText("5000"); peerIpField.setText("127.0.0.1"); peerPortField.setText("5001"); }); //
+        javafx.scene.control.Button p2Btn = presetButton("Preset: Player 2"); //
+        p2Btn.setOnAction(e -> { localPortField.setText("5001"); peerIpField.setText("127.0.0.1"); peerPortField.setText("5000"); }); //
+        presets.getChildren().addAll(p1Btn, p2Btn); //
+        grid.add(presets, 0, 5, 2, 1); //
 
-        javafx.scene.control.Button launchBtn = new javafx.scene.control.Button("Connect & Launch Game");
-        launchBtn.setPrefWidth(350);
-        String ls = "-fx-background-color: #ff4a5a; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 14; -fx-cursor: hand; -fx-background-radius: 6; -fx-padding: 8 16;";
-        launchBtn.setStyle(ls);
+        javafx.scene.control.Button launchBtn = new javafx.scene.control.Button("Connect & Launch Game"); //
+        launchBtn.setPrefWidth(350); //
+        String ls = "-fx-background-color: #ff4a5a; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 14; -fx-cursor: hand; -fx-background-radius: 6; -fx-padding: 8 16;"; //
+        launchBtn.setStyle(ls); //
         launchBtn.setOnAction(e -> {
             try {
-                int lp    = Integer.parseInt(localPortField.getText().trim());
-                String ip = peerIpField.getText().trim();
-                int pp    = Integer.parseInt(peerPortField.getText().trim());
-                launcher.close();
-                startGame(primaryStage, lp, ip, pp);
+                int lp    = Integer.parseInt(localPortField.getText().trim()); //
+                String ip = peerIpField.getText().trim(); //
+                int pp    = Integer.parseInt(peerPortField.getText().trim()); //
+                launcher.close(); //
+                startGame(primaryStage, lp, ip, pp); //
             } catch (NumberFormatException ex) {
-                subtitle.setText("Error: Ports must be integers!");
-                subtitle.setFill(Color.YELLOW);
+                subtitle.setText("Error: Ports must be integers!"); //
+                subtitle.setFill(Color.YELLOW); //
             }
         });
-        grid.add(launchBtn, 0, 6, 2, 1);
+        grid.add(launchBtn, 0, 6, 2, 1); //
 
-        launcher.setScene(new Scene(grid, 420, 360));
-        launcher.setResizable(false);
-        launcher.show();
+        launcher.setScene(new Scene(grid, 420, 360)); //
+        launcher.setResizable(false); //
+        launcher.show(); //
     }
 
+    // -------------------------------------------------------------------------
+    // Game initialization loop mechanics
+    // -------------------------------------------------------------------------
     private void startGame(Stage primaryStage, int localPort, String peerIp, int peerPort) {
-        initContent();
-        initNetwork(primaryStage, localPort, peerIp, peerPort);
+        initContent(); //
+        initNetwork(primaryStage, localPort, peerIp, peerPort); //
 
-        double localSpawnX = 40;  
-        double localSpawnY = 360;
-        double remoteSpawnX = 200;
-        double remoteSpawnY = 360;
+        double localSpawnX = 80;  
+        double localSpawnY = 540;
+        double remoteSpawnX = 760;
+        double remoteSpawnY = 540;
 
         if (localPort == 5000) {
             isMyTurn = true;
 
-            // Player 1 handles coordinate randomization authority
             Random rand = new Random();
-            int p1Index = rand.nextInt(SPAWN_POINTS.length);
-            int p2Index = rand.nextInt(SPAWN_POINTS.length);
+            int p1Index = rand.nextInt(LevelData.SPAWN_POINTS.length);
+            int p2Index = rand.nextInt(LevelData.SPAWN_POINTS.length);
             
             while (p1Index == p2Index) {
-                p2Index = rand.nextInt(SPAWN_POINTS.length);
+                p2Index = rand.nextInt(LevelData.SPAWN_POINTS.length);
             }
 
-            Point2D p1Spot = SPAWN_POINTS[p1Index];
-            Point2D p2Spot = SPAWN_POINTS[p2Index];
+            Point2D p1Spot = LevelData.SPAWN_POINTS[p1Index];
+            Point2D p2Spot = LevelData.SPAWN_POINTS[p2Index];
 
             localSpawnX = p1Spot.getX();
             localSpawnY = p1Spot.getY();
             remoteSpawnX = p2Spot.getX();
             remoteSpawnY = p2Spot.getY();
 
-            // Send configuration properties package string over to Player 2
             final String spawnMsg = "SPAWN:" + remoteSpawnX + "," + remoteSpawnY + "," + localSpawnX + "," + localSpawnY;
             
             new Thread(() -> {
@@ -408,96 +429,96 @@ public class Main extends Application {
         remoteGhost.setTranslateY(remoteSpawnY);
         remoteGhost.setVisible(true);
 
-        Weapon bazooka = new Weapon("Bazooka", true, 50);
-        Scene scene = new Scene(appRoot, VIEW_WIDTH, VIEW_HEIGHT);
+        Weapon bazooka = new Weapon("Bazooka", true, 50); //
+        Scene scene = new Scene(appRoot, VIEW_WIDTH, VIEW_HEIGHT); //
 
         scene.setOnKeyPressed(e -> {
             if (!isMyTurn || gameFinished) return; 
 
-            if (e.getCode() == KeyCode.A)      leftPressed = true;
-            if (e.getCode() == KeyCode.D)      rightPressed = true;
-            if (e.getCode() == KeyCode.W)      player.jump();
-            if (e.getCode() == KeyCode.LEFT)   player.updateAim(-5);
-            if (e.getCode() == KeyCode.RIGHT)  player.updateAim(5);
-            if (e.getCode() == KeyCode.ENTER)  player.startAiming(bazooka);
-            if (e.getCode() == KeyCode.SPACE)  player.startCharging();
-            if (e.getCode() == KeyCode.ESCAPE) player.cancelAim();
+            if (e.getCode() == KeyCode.A)      leftPressed = true; //
+            if (e.getCode() == KeyCode.D)      rightPressed = true; //
+            if (e.getCode() == KeyCode.W)      player.jump(); //
+            if (e.getCode() == KeyCode.LEFT)   player.updateAim(-5); //
+            if (e.getCode() == KeyCode.RIGHT)  player.updateAim(5); //
+            if (e.getCode() == KeyCode.ENTER)  player.startAiming(bazooka); //
+            if (e.getCode() == KeyCode.SPACE)  player.startCharging(); //
+            if (e.getCode() == KeyCode.ESCAPE) player.cancelAim(); //
         });
 
         scene.setOnKeyReleased(e -> {
-            if (!isMyTurn || gameFinished) return; 
+            if (!isMyTurn || gameFinished) return;
 
-            if (e.getCode() == KeyCode.A) leftPressed  = false;
-            if (e.getCode() == KeyCode.D) rightPressed = false;
-            if (!leftPressed && !rightPressed) player.stopMovingState();
-            if (e.getCode() == KeyCode.SPACE) player.releaseCharge();
+            if (e.getCode() == KeyCode.A) leftPressed  = false; //
+            if (e.getCode() == KeyCode.D) rightPressed = false; //
+            if (!leftPressed && !rightPressed) player.stopMovingState(); //
+            if (e.getCode() == KeyCode.SPACE) player.releaseCharge(); //
         });
 
         new AnimationTimer() {
             @Override
             public void handle(long now) {
                 if (previousTime == 0) {
-                    previousTime = now;
-                    return;
+                    previousTime = now; //
+                    return; //
                 }
 
-                float secondsElapsed = (now - previousTime) / 1e9f;
-                accumulatedTime += secondsElapsed;
-                previousTime = now;
+                float secondsElapsed = (now - previousTime) / 1e9f; //
+                accumulatedTime += secondsElapsed; //
+                previousTime = now; //
 
                 while (accumulatedTime >= TIMESTEP) {
-                    tick(TIMESTEP);
-                    accumulatedTime -= TIMESTEP;
+                    tick(TIMESTEP); //
+                    accumulatedTime -= TIMESTEP; //
                 }
 
-                player.updateHpBar(gameRoot.getLayoutX());
-                updateRemoteHpBar();
+                player.updateHpBar(gameRoot.getLayoutX()); //
+                updateRemoteHpBar(); //
                 checkWinConditions();
-                
+
                 String turnStatus = isMyTurn ? "YOUR TURN" : "WAITING FOR OPPONENT";
                 if (gameFinished) turnStatus = "GAME OVER";
 
                 hudLabel.setText(String.format(
                     "[%s]\nHP: %d\nState: %s\nTurn Clock: %.1fs\nMove Fuel: %.1fs\nAim Angle: %.0f°\nCharge: %.0f%%",
                     turnStatus,
-                    player.getHp(),
-                    player.getCurrentState(),
-                    player.getTurnTimeRemaining(),
-                    player.getMovementTimeRemaining(),
-                    player.getAimAngle(),
-                    player.getShootPower()
+                    player.getHp(), //
+                    player.getCurrentState(), //
+                    player.getTurnTimeRemaining(), //
+                    player.getMovementTimeRemaining(), //
+                    player.getAimAngle(), //
+                    player.getShootPower() //
                 ));
 
-                secondsSinceLastFpsLog += secondsElapsed;
-                framesSinceLastFpsLog++;
+                secondsSinceLastFpsLog += secondsElapsed; //
+                framesSinceLastFpsLog++; //
                 if (secondsSinceLastFpsLog >= 0.5f) {
-                    secondsSinceLastFpsLog = 0;
-                    framesSinceLastFpsLog  = 0;
+                    secondsSinceLastFpsLog = 0; //
+                    framesSinceLastFpsLog  = 0; //
                 }
             }
-        }.start();
+        }.start(); //
 
-        primaryStage.setTitle("Worms RE  [:" + localPort + " \u2192 " + peerIp + ":" + peerPort + "]");
-        primaryStage.setScene(scene);
-        primaryStage.setResizable(false);
-        primaryStage.show();
+        primaryStage.setTitle("Worms RE  [:" + localPort + " \u2192 " + peerIp + ":" + peerPort + "]"); //
+        primaryStage.setScene(scene); //
+        primaryStage.setResizable(false); //
+        primaryStage.show(); //
     }
 
     private void tick(float dt) {
         if (gameFinished) return;
 
         if (isMyTurn) {
-            if (leftPressed)  player.moveLeft(dt);
-            if (rightPressed) player.moveRight(dt);
+            if (leftPressed)  player.moveLeft(dt); //
+            if (rightPressed) player.moveRight(dt); //
         }
 
-        player.update(dt);
+        player.update(dt); //
 
         for (int i = projectiles.size() - 1; i >= 0; i--) {
-            Projectile p = projectiles.get(i);
-            p.update();
+            Projectile p = projectiles.get(i); //
+            p.update(); //
             if (!p.isActive()) {
-                projectiles.remove(i);
+                projectiles.remove(i); //
                 
                 if (isMyTurn && p.getShooter() == player) {
                     passTurnToPeer();
@@ -505,29 +526,29 @@ public class Main extends Application {
             }
         }
 
-        broadcastState();
+        broadcastState(); //
     }
 
     private javafx.scene.control.Label styledLabel(String text) {
-        var lbl = new javafx.scene.control.Label(text);
-        lbl.setTextFill(Color.web("#b4b4d0"));
-        return lbl;
+        var lbl = new javafx.scene.control.Label(text); //
+        lbl.setTextFill(Color.web("#b4b4d0")); //
+        return lbl; //
     }
 
     private javafx.scene.control.TextField styledField(String defaultVal) {
-        var tf = new javafx.scene.control.TextField(defaultVal);
-        tf.setStyle("-fx-background-color: #2b2b3d; -fx-text-fill: white; -fx-border-color: #3b3b4f; -fx-border-radius: 4; -fx-background-radius: 4; -fx-font-size: 13;");
-        tf.setPrefWidth(200);
-        return tf;
+        var tf = new javafx.scene.control.TextField(defaultVal); //
+        tf.setStyle("-fx-background-color: #2b2b3d; -fx-text-fill: white; -fx-border-color: #3b3b4f; -fx-border-radius: 4; -fx-background-radius: 4; -fx-font-size: 13;"); //
+        tf.setPrefWidth(200); //
+        return tf; //
     }
 
     private javafx.scene.control.Button presetButton(String text) {
-        var btn = new javafx.scene.control.Button(text);
-        btn.setStyle("-fx-background-color: #3b3b4f; -fx-text-fill: #00ffcc; -fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 4;");
-        return btn;
+        var btn = new javafx.scene.control.Button(text); //
+        btn.setStyle("-fx-background-color: #3b3b4f; -fx-text-fill: #00ffcc; -fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 4;"); //
+        return btn; //
     }
 
     public static void main(String[] args) {
-        launch(args);
+        launch(args); //
     }
 }
