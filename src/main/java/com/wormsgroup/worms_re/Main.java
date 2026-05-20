@@ -14,8 +14,10 @@ import javafx.stage.Stage;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Random;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.geometry.Point2D;
 
 public class Main extends Application {
     private static final int TILE_SIZE   = 40;
@@ -43,7 +45,7 @@ public class Main extends Application {
 
     private Label hudLabel = new Label();
     private Label netLabel = new Label();
-    private Label victoryLabel = new Label(); // Victory overlay banner
+    private Label victoryLabel = new Label(); // Overlay for end-game notifications
 
     private Rectangle      remoteGhost;
     private Rectangle      remoteHpBarBg;
@@ -55,6 +57,16 @@ public class Main extends Application {
     private boolean gameFinished = false;
 
     private boolean isMyTurn = false; 
+
+    // Predefined safe coordinates on top of green tiles
+    private static final Point2D[] SPAWN_POINTS = {
+        new Point2D(80, 360),
+        new Point2D(240, 200),
+        new Point2D(400, 360),
+        new Point2D(600, 160),
+        new Point2D(720, 400),
+        new Point2D(900, 240)
+    };
 
     private void initContent() {
         var stream = getClass().getResourceAsStream("background.jpg");
@@ -120,7 +132,6 @@ public class Main extends Application {
         netLabel.setStyle("-fx-font-size: 12px; -fx-font-family: monospace; -fx-text-fill: #00ffcc;");
         netLabel.setText("Network: initialising...");
 
-        // Victory banner placement configuration
         victoryLabel.setPrefWidth(VIEW_WIDTH);
         victoryLabel.setTranslateY(VIEW_HEIGHT / 2.0 - 40);
         victoryLabel.setAlignment(javafx.geometry.Pos.CENTER);
@@ -174,6 +185,30 @@ public class Main extends Application {
 
     private void handleNetworkMessage(String message) {
         if (gameFinished) return;
+
+        // Extract randomized initial locations sent from Player 1
+        if (message.startsWith("SPAWN:")) {
+            try {
+                String data = message.substring(6);
+                String[] coordinates = data.split(",");
+                if (coordinates.length == 4) {
+                    double myNewX = Double.parseDouble(coordinates[0]);
+                    double myNewY = Double.parseDouble(coordinates[1]);
+                    double ghostNewX = Double.parseDouble(coordinates[2]);
+                    double ghostNewY = Double.parseDouble(coordinates[3]);
+
+                    player.getEntity().setTranslateX(myNewX);
+                    player.getEntity().setTranslateY(myNewY);
+
+                    remoteGhost.setTranslateX(ghostNewX);
+                    remoteGhost.setTranslateY(ghostNewY);
+                    remoteGhost.setVisible(true);
+                }
+            } catch (Exception e) {
+                System.out.println("Failed to parse setup spawn location data.");
+            }
+            return;
+        }
 
         if (message.equals("PASS_TURN")) {
             if (!player.isDead()) {
@@ -232,7 +267,6 @@ public class Main extends Application {
     private void checkWinConditions() {
         if (gameFinished) return;
 
-        // Condition A: Opponent died, you are still standing
         if (remoteDead && !player.isDead()) {
             gameFinished = true;
             isMyTurn = false;
@@ -240,7 +274,6 @@ public class Main extends Application {
             victoryLabel.setStyle("-fx-font-size: 36px; -fx-font-weight: bold; -fx-text-fill: #00ffcc; -fx-background-color: rgba(0,0,0,0.7); -fx-padding: 20;");
             victoryLabel.setVisible(true);
         }
-        // Condition B: You died
         else if (player.isDead()) {
             gameFinished = true;
             isMyTurn = false;
@@ -326,14 +359,52 @@ public class Main extends Application {
     }
 
     private void startGame(Stage primaryStage, int localPort, String peerIp, int peerPort) {
+        initContent();
+        initNetwork(primaryStage, localPort, peerIp, peerPort);
+
+        double localSpawnX = 40;  
+        double localSpawnY = 360;
+        double remoteSpawnX = 200;
+        double remoteSpawnY = 360;
+
         if (localPort == 5000) {
             isMyTurn = true;
+
+            // Player 1 handles coordinate randomization authority
+            Random rand = new Random();
+            int p1Index = rand.nextInt(SPAWN_POINTS.length);
+            int p2Index = rand.nextInt(SPAWN_POINTS.length);
+            
+            while (p1Index == p2Index) {
+                p2Index = rand.nextInt(SPAWN_POINTS.length);
+            }
+
+            Point2D p1Spot = SPAWN_POINTS[p1Index];
+            Point2D p2Spot = SPAWN_POINTS[p2Index];
+
+            localSpawnX = p1Spot.getX();
+            localSpawnY = p1Spot.getY();
+            remoteSpawnX = p2Spot.getX();
+            remoteSpawnY = p2Spot.getY();
+
+            // Send configuration properties package string over to Player 2
+            final String spawnMsg = "SPAWN:" + remoteSpawnX + "," + remoteSpawnY + "," + localSpawnX + "," + localSpawnY;
+            
+            new Thread(() -> {
+                try { Thread.sleep(400); } catch (InterruptedException e) {}
+                if (networkManager != null) networkManager.sendData(spawnMsg);
+            }).start();
+
         } else {
             isMyTurn = false;
         }
 
-        initContent();
-        initNetwork(primaryStage, localPort, peerIp, peerPort);
+        player.getEntity().setTranslateX(localSpawnX);
+        player.getEntity().setTranslateY(localSpawnY);
+        
+        remoteGhost.setTranslateX(remoteSpawnX);
+        remoteGhost.setTranslateY(remoteSpawnY);
+        remoteGhost.setVisible(true);
 
         Weapon bazooka = new Weapon("Bazooka", true, 50);
         Scene scene = new Scene(appRoot, VIEW_WIDTH, VIEW_HEIGHT);
