@@ -8,51 +8,65 @@ import javafx.scene.shape.Circle;
 import java.util.ArrayList;
 
 public class Projectile {
-    private Circle sprite;
+    private Circle  sprite;
     private Point2D velocity;
-    private Pane gameRoot;
-    private ArrayList<Node> platforms;
+    private Pane    gameRoot;
+    private ArrayList<Node>   platforms;
+    private ArrayList<Player> players;
+    private Player  shooter;   // excluded from self-hit
+    private int     damage;
     private boolean active = true;
 
     private static final double GRAVITY = 0.3;
 
-    public Projectile(double startX, double startY, double angleDegrees, double power, Pane gameRoot, ArrayList<Node> platforms) {
-        this.gameRoot = gameRoot;
+    public Projectile(double startX, double startY, double angleDegrees, double power,
+                      Pane gameRoot, ArrayList<Node> platforms,
+                      ArrayList<Player> players, Player shooter, int damage) {
+        this.gameRoot  = gameRoot;
         this.platforms = platforms;
+        this.players   = players;
+        this.shooter   = shooter;
+        this.damage    = damage;
 
-        // Create visual sprite
         sprite = new Circle(5, Color.RED);
         sprite.setTranslateX(startX);
         sprite.setTranslateY(startY);
         gameRoot.getChildren().add(sprite);
 
-        // Convert angle from degrees to radians and calculate velocity components
-        // In screen coordinates, negative Y goes up
         double radians = Math.toRadians(angleDegrees);
-        double speed = power * 0.15; // Scaler to make physics feel natural
-        this.velocity = new Point2D(Math.cos(radians) * speed, Math.sin(radians) * speed);
+        double speed   = power * 0.15;
+        this.velocity  = new Point2D(Math.cos(radians) * speed, Math.sin(radians) * speed);
     }
 
     public void update() {
         if (!active) return;
 
-        // Apply gravity to projectile velocity vector
         velocity = velocity.add(0, GRAVITY);
-
-        // Update position
         sprite.setTranslateX(sprite.getTranslateX() + velocity.getX());
         sprite.setTranslateY(sprite.getTranslateY() + velocity.getY());
 
-        // Simple bounding collision check with platforms
+        // Platform collision
         for (Node platform : platforms) {
             if (sprite.getBoundsInParent().intersects(platform.getBoundsInParent())) {
                 destroy();
-                break;
+                return;
             }
         }
 
-        // Out of bounds check
-        if (sprite.getTranslateY() > 800 || sprite.getTranslateX() < 0 || sprite.getTranslateX() > 1000) {
+        // Player hit detection — skip the shooter to avoid self-hit on launch
+        for (Player p : players) {
+            if (p == shooter) continue;
+            if (sprite.getBoundsInParent().intersects(p.getEntity().getBoundsInParent())) {
+                p.takeDamage(damage);
+                destroy();
+                return;
+            }
+        }
+
+        // Out of bounds
+        if (sprite.getTranslateY() > 800 ||
+            sprite.getTranslateX() < 0   ||
+            sprite.getTranslateX() > 1200) {
             destroy();
         }
     }
@@ -64,7 +78,5 @@ public class Projectile {
         }
     }
 
-    public boolean isActive() {
-        return active;
-    }
+    public boolean isActive() { return active; }
 }
