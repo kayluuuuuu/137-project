@@ -12,6 +12,7 @@ public class Player {
     private Node entity;
     private int hp;
     private int maxHp;
+    private boolean isDead = false; // Track death status
 
     private Rectangle hpBarBg;
     private Rectangle hpBarFill;
@@ -24,16 +25,15 @@ public class Player {
     private int levelWidth;
     private ArrayList<Node> platforms;
     private Pane gameRoot;
+    private Pane uiRoot; // Keep track of uiRoot to remove HP bar elements
 
     private double turnTimer = 0;
     private static final double TURN_TIME_LIMIT    = 60.0;
     private double movementTimeRemaining = 0;
     private static final double MAX_MOVEMENT_TIME  = 10.0;
-    private double postShootMoveTime = 0;
-    private static final double POST_SHOOT_MOVE_TIME = 10.0;
 
     public enum ActionState {
-        IDLE, MOVING, AIMING, POWER_SELECTION, SHOOTING, POST_SHOOT_MOVING
+        IDLE, MOVING, AIMING, POWER_SELECTION, SHOOTING, DEAD
     }
     private ActionState currentState = ActionState.IDLE;
 
@@ -46,7 +46,7 @@ public class Player {
     private Line aimLine;
     private ArrayList<Projectile> activeProjectiles;
     private ArrayList<Player>     allPlayers;
-    private Node remoteGhost; // Added reference holder
+    private Node remoteGhost;
 
     private java.util.function.BiConsumer<Player, Integer> hitCallback = null;
     public void setHitCallback(java.util.function.BiConsumer<Player, Integer> cb) { this.hitCallback = cb; }
@@ -62,10 +62,11 @@ public class Player {
                   Pane gameRoot, Pane uiRoot,
                   ArrayList<Node> platforms, int levelWidth,
                   ArrayList<Projectile> activeProjectiles,
-                  ArrayList<Player> allPlayers, Node remoteGhost) { // Constructor updated
+                  ArrayList<Player> allPlayers, Node remoteGhost) {
         this.hp                 = hp;
         this.maxHp              = hp;
         this.gameRoot           = gameRoot;
+        this.uiRoot             = uiRoot;
         this.platforms          = platforms;
         this.levelWidth         = levelWidth;
         this.movementTimeRemaining = MAX_MOVEMENT_TIME;
@@ -92,6 +93,8 @@ public class Player {
     }
 
     public void updateHpBar(double cameraOffsetX) {
+        if (isDead) return;
+
         double screenX = entity.getTranslateX() + cameraOffsetX;
         double screenY = entity.getTranslateY() - 10;
 
@@ -109,8 +112,7 @@ public class Player {
     }
 
     public void update(double deltaTime) {
-        turnTimer += deltaTime;
-        if (turnTimer >= TURN_TIME_LIMIT) endTurn();
+        if (isDead) return;
 
         switch (currentState) {
             case IDLE:
@@ -133,16 +135,11 @@ public class Player {
                 applyGravity();
                 moveY((int) velocity.getY());
                 break;
-            case POST_SHOOT_MOVING:
-                postShootMoveTime -= deltaTime;
-                if (postShootMoveTime <= 0) endTurn();
-                applyGravity();
-                moveY((int) velocity.getY());
-                break;
         }
     }
 
     public void moveLeft(double deltaTime) {
+        if (isDead) return;
         if (movementTimeRemaining > 0 && isStateAllowedToMove()) {
             if (entity.getTranslateX() >= LATERAL_MOVE_SPEED) {
                 moveX(-LATERAL_MOVE_SPEED);
@@ -153,6 +150,7 @@ public class Player {
     }
 
     public void moveRight(double deltaTime) {
+        if (isDead) return;
         if (movementTimeRemaining > 0 && isStateAllowedToMove()) {
             if (entity.getTranslateX() + WIDTH <= levelWidth - LATERAL_MOVE_SPEED) {
                 moveX(LATERAL_MOVE_SPEED);
@@ -164,11 +162,11 @@ public class Player {
 
     private boolean isStateAllowedToMove() {
         return currentState == ActionState.IDLE    || currentState == ActionState.MOVING   ||
-               currentState == ActionState.AIMING  || currentState == ActionState.POWER_SELECTION ||
-               currentState == ActionState.POST_SHOOT_MOVING;
+               currentState == ActionState.AIMING  || currentState == ActionState.POWER_SELECTION;
     }
 
     public void jump() {
+        if (isDead) return;
         if (canJump && (currentState == ActionState.IDLE   ||
                         currentState == ActionState.MOVING ||
                         currentState == ActionState.AIMING)) {
@@ -178,6 +176,7 @@ public class Player {
     }
 
     public void startAiming(Weapon weapon) {
+        if (isDead) return;
         if (currentState == ActionState.IDLE || currentState == ActionState.MOVING) {
             this.currentWeapon = weapon;
             setActionState(ActionState.AIMING);
@@ -226,28 +225,46 @@ public class Player {
         double spawnY  = entity.getTranslateY() + (HEIGHT / 2.0);
         int    damage  = (currentWeapon != null) ? currentWeapon.getDamage() : 10;
 
-        // Projectile setup now passes down the remoteGhost node
         Projectile proj = new Projectile(
             spawnX, spawnY, aimAngle, shootPower,
             gameRoot, platforms, allPlayers, remoteGhost, this, damage,
             hitCallback   
         );
         activeProjectiles.add(proj);
+    }
 
-        postShootMoveTime = POST_SHOOT_MOVE_TIME;
-        setActionState(ActionState.POST_SHOOT_MOVING);
+    public void resetTurnLimits() {
+        if (isDead) return;
+        turnTimer             = 0;
+        movementTimeRemaining = MAX_MOVEMENT_TIME;
+        chargeTimer           = 0;
+        shootPower            = 0;
+        setActionState(ActionState.IDLE);
     }
 
     public void endTurn() {
-        turnTimer             = 0;
-        movementTimeRemaining = MAX_MOVEMENT_TIME;
-        postShootMoveTime     = 0;
-        chargeTimer           = 0;
+        shootPower  = 0;
+        chargeTimer = 0;
         aimLine.setVisible(false);
         setActionState(ActionState.IDLE);
     }
 
-    public void takeDamage(int amount) { hp = Math.max(0, hp - amount); }
+    public void takeDamage(int amount) { 
+        if (isDead) return;
+        hp = Math.max(0, hp - amount); 
+        if (hp <= 0) {
+            die();
+        }
+    }
+
+    private void die() {
+        isDead = true;
+        setActionState(ActionState.DEAD);
+        gameRoot.getChildren().removeAll(entity, aimLine);
+        uiRoot.getChildren().removeAll(hpBarBg, hpBarFill);
+    }
+
+    public boolean isDead() { return isDead; }
 
     private void applyGravity() {
         if (velocity.getY() < MAX_FALL_SPEED) velocity = velocity.add(0, GRAVITY);
@@ -285,26 +302,12 @@ public class Player {
         }
     }
 
-    private void updateAimArrow() {
-        double centerX = entity.getTranslateX() + (WIDTH  / 2.0);
-        double centerY = entity.getTranslateY() + (HEIGHT / 2.0);
-        double rad     = Math.toRadians(aimAngle);
-
-        aimLine.setStartX(centerX);
-        aimLine.setStartY(centerY);
-        aimLine.setEndX(centerX + Math.cos(rad) * 40);
-        aimLine.setEndY(centerY + Math.sin(rad) * 40);
-    }
-
     public void stopMovingState() {
         if (currentState == ActionState.MOVING) setActionState(ActionState.IDLE);
     }
 
-    private void setActionState(ActionState s)  { this.currentState = s; }
     public Node        getEntity()               { return entity; }
     public int         getHp()                   { return hp; }
-    public void        setHp(int value)          { hp = Math.max(0, Math.min(maxHp, value)); }
-    public int         getWeaponDamage()         { return (currentWeapon != null) ? currentWeapon.getDamage() : 10; }
     public double      getTurnTimeRemaining()     { return Math.max(0, TURN_TIME_LIMIT - turnTimer); }
     public double      getMovementTimeRemaining() { return Math.max(0, movementTimeRemaining); }
     public double      getShootPower()            { return shootPower; }

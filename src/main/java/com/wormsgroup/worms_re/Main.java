@@ -22,49 +22,44 @@ public class Main extends Application {
     private static final int VIEW_WIDTH  = 800;
     private static final int VIEW_HEIGHT = 600;
 
-    // Scene layer hierarchy
     private Pane appRoot  = new Pane();
     private Pane gameRoot = new Pane();
     private Pane uiRoot   = new Pane();
 
-    // Game state
     private ArrayList<Node>       platforms   = new ArrayList<>();
     private ArrayList<Projectile> projectiles = new ArrayList<>();
     private ArrayList<Player>     allPlayers  = new ArrayList<>(); 
     private Player player;
     private int levelWidth;
 
-    // Input state
     private boolean leftPressed  = false;
     private boolean rightPressed = false;
 
-    // Fixed-timestep game loop (60 ticks/sec)
     private static final float TIMESTEP    = 1.0f / 60.0f;
     private float  accumulatedTime         = 0;
     private long   previousTime            = 0;
     private float  secondsSinceLastFpsLog  = 0;
     private int    framesSinceLastFpsLog   = 0;
 
-    // HUD labels
     private Label hudLabel = new Label();
     private Label netLabel = new Label();
+    private Label victoryLabel = new Label(); // Victory overlay banner
 
-    // Multiplayer
     private Rectangle      remoteGhost;
     private Rectangle      remoteHpBarBg;
     private Rectangle      remoteHpBarFill;
     private NetworkManager networkManager;
     private double remoteHp    = 100;
     private double remoteMaxHp = 100;
+    private boolean remoteDead = false;
+    private boolean gameFinished = false;
 
-    // -------------------------------------------------------------------------
-    // Level + player setup
-    // -------------------------------------------------------------------------
+    private boolean isMyTurn = false; 
+
     private void initContent() {
         var stream = getClass().getResourceAsStream("background.jpg");
         if (stream == null) {
-            throw new RuntimeException(
-                "background.jpg not found — check src/main/resources/com/wormsgroup/worms_re/");
+            throw new RuntimeException("background.jpg not found — check resources!");
         }
         ImageView bg = new ImageView(new Image(stream));
         bg.setFitWidth(VIEW_WIDTH);
@@ -84,19 +79,15 @@ public class Main extends Application {
             }
         }
 
-        // Remote ghost sprite initialized FIRST so we can pass it to Player
         remoteGhost = new Rectangle(20, 20, Color.RED);
         remoteGhost.setOpacity(0.6);
         remoteGhost.setVisible(false);
         gameRoot.getChildren().add(remoteGhost);
 
-        // Build allPlayers and pass remoteGhost reference into Player constructor
         player = new Player(40, 360, 100, gameRoot, uiRoot, platforms, levelWidth,
                             projectiles, allPlayers, remoteGhost);
         allPlayers.add(player);
 
-        // When a local projectile hits the remote player ghost:
-        // Broadcast "HIT:n" so the peer applies it to themselves (authoritative HP)
         player.setHitCallback((hitPlayer, damage) -> {
             if (hitPlayer != null) {
                 hitPlayer.takeDamage(damage);
@@ -106,22 +97,20 @@ public class Main extends Application {
             }
         });
 
-        // Remote HP bar
         remoteHpBarBg   = new Rectangle(40, 5, Color.DARKGRAY);
         remoteHpBarFill = new Rectangle(40, 5, Color.LIMEGREEN);
         remoteHpBarBg.setVisible(false);
         remoteHpBarFill.setVisible(false);
         uiRoot.getChildren().addAll(remoteHpBarBg, remoteHpBarFill);
 
-        // Camera
         player.getEntity().translateXProperty().addListener((obs, oldVal, newVal) -> {
+            if (player.isDead()) return;
             int offset = newVal.intValue();
             if (offset > VIEW_WIDTH / 2 && offset < levelWidth - VIEW_WIDTH / 2) {
                 gameRoot.setLayoutX(-(offset - VIEW_WIDTH / 2));
             }
         });
 
-        // HUD
         hudLabel.setTranslateX(15);
         hudLabel.setTranslateY(15);
         hudLabel.setStyle("-fx-font-size: 14px; -fx-font-family: monospace; -fx-text-fill: white;");
@@ -131,16 +120,22 @@ public class Main extends Application {
         netLabel.setStyle("-fx-font-size: 12px; -fx-font-family: monospace; -fx-text-fill: #00ffcc;");
         netLabel.setText("Network: initialising...");
 
-        uiRoot.getChildren().addAll(hudLabel, netLabel);
+        // Victory banner placement configuration
+        victoryLabel.setPrefWidth(VIEW_WIDTH);
+        victoryLabel.setTranslateY(VIEW_HEIGHT / 2.0 - 40);
+        victoryLabel.setAlignment(javafx.geometry.Pos.CENTER);
+        victoryLabel.setVisible(false);
+
+        uiRoot.getChildren().addAll(hudLabel, netLabel, victoryLabel);
         appRoot.getChildren().addAll(bg, gameRoot, uiRoot);
     }
 
-    // -------------------------------------------------------------------------
-    // HP bar — remote ghost
-    // -------------------------------------------------------------------------
     private void updateRemoteHpBar() {
-        if (!remoteGhost.isVisible()) return;
-
+        if (!remoteGhost.isVisible() || remoteDead) {
+            remoteHpBarBg.setVisible(false);
+            remoteHpBarFill.setVisible(false);
+            return;
+        }
         double screenX = remoteGhost.getTranslateX() + gameRoot.getLayoutX();
         double screenY = remoteGhost.getTranslateY() - 10;
         double ratio   = remoteHp / remoteMaxHp;
@@ -159,9 +154,6 @@ public class Main extends Application {
         else                   remoteHpBarFill.setFill(Color.RED);
     }
 
-    // -------------------------------------------------------------------------
-    // Networking
-    // -------------------------------------------------------------------------
     private void initNetwork(Stage primaryStage, int localPort, String peerIp, int peerPort) {
         try {
             networkManager = new NetworkManager(localPort, message ->
@@ -170,7 +162,6 @@ public class Main extends Application {
             networkManager.startListening();
             networkManager.setPeer(peerIp, peerPort);
             netLabel.setText("Network: :" + localPort + " → " + peerIp + ":" + peerPort);
-            System.out.println("Listening on :" + localPort + "  peer=" + peerIp + ":" + peerPort);
         } catch (SocketException | UnknownHostException e) {
             netLabel.setText("Network: failed — " + e.getMessage());
             e.printStackTrace();
@@ -182,6 +173,16 @@ public class Main extends Application {
     }
 
     private void handleNetworkMessage(String message) {
+        if (gameFinished) return;
+
+        if (message.equals("PASS_TURN")) {
+            if (!player.isDead()) {
+                isMyTurn = true;
+                player.resetTurnLimits();
+            }
+            return;
+        }
+
         if (message.startsWith("HIT:")) {
             try {
                 int dmg = Integer.parseInt(message.substring(4));
@@ -193,10 +194,18 @@ public class Main extends Application {
         String[] parts = message.split(",");
         if (parts.length >= 3) {
             try {
-                remoteGhost.setTranslateX(Double.parseDouble(parts[0]));
-                remoteGhost.setTranslateY(Double.parseDouble(parts[1]));
-                remoteGhost.setVisible(true);
+                double rx = Double.parseDouble(parts[0]);
+                double ry = Double.parseDouble(parts[1]);
                 remoteHp = Double.parseDouble(parts[2]);
+
+                if (remoteHp <= 0 && !remoteDead) {
+                    remoteDead = true;
+                    remoteGhost.setVisible(false);
+                } else if (!remoteDead) {
+                    remoteGhost.setTranslateX(rx);
+                    remoteGhost.setTranslateY(ry);
+                    remoteGhost.setVisible(true);
+                }
             } catch (NumberFormatException ignored) {}
         }
     }
@@ -210,9 +219,37 @@ public class Main extends Application {
         );
     }
 
-    // -------------------------------------------------------------------------
-    // Launcher
-    // -------------------------------------------------------------------------
+    private void passTurnToPeer() {
+        isMyTurn = false;
+        leftPressed = false;
+        rightPressed = false;
+        player.endTurn();
+        if (networkManager != null) {
+            networkManager.sendData("PASS_TURN");
+        }
+    }
+
+    private void checkWinConditions() {
+        if (gameFinished) return;
+
+        // Condition A: Opponent died, you are still standing
+        if (remoteDead && !player.isDead()) {
+            gameFinished = true;
+            isMyTurn = false;
+            victoryLabel.setText("VICTORY! YOU WIN!");
+            victoryLabel.setStyle("-fx-font-size: 36px; -fx-font-weight: bold; -fx-text-fill: #00ffcc; -fx-background-color: rgba(0,0,0,0.7); -fx-padding: 20;");
+            victoryLabel.setVisible(true);
+        }
+        // Condition B: You died
+        else if (player.isDead()) {
+            gameFinished = true;
+            isMyTurn = false;
+            victoryLabel.setText("DEFEAT! YOU DIED!");
+            victoryLabel.setStyle("-fx-font-size: 36px; -fx-font-weight: bold; -fx-text-fill: #ff4a5a; -fx-background-color: rgba(0,0,0,0.7); -fx-padding: 20;");
+            victoryLabel.setVisible(true);
+        }
+    }
+
     @Override
     public void start(Stage primaryStage) {
         var rawArgs = getParameters().getRaw();
@@ -269,8 +306,6 @@ public class Main extends Application {
         launchBtn.setPrefWidth(350);
         String ls = "-fx-background-color: #ff4a5a; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 14; -fx-cursor: hand; -fx-background-radius: 6; -fx-padding: 8 16;";
         launchBtn.setStyle(ls);
-        launchBtn.setOnMouseEntered(e -> launchBtn.setStyle(ls.replace("#ff4a5a", "#ff606e")));
-        launchBtn.setOnMouseExited(e  -> launchBtn.setStyle(ls));
         launchBtn.setOnAction(e -> {
             try {
                 int lp    = Integer.parseInt(localPortField.getText().trim());
@@ -290,10 +325,13 @@ public class Main extends Application {
         launcher.show();
     }
 
-    // -------------------------------------------------------------------------
-    // Game startup
-    // -------------------------------------------------------------------------
     private void startGame(Stage primaryStage, int localPort, String peerIp, int peerPort) {
+        if (localPort == 5000) {
+            isMyTurn = true;
+        } else {
+            isMyTurn = false;
+        }
+
         initContent();
         initNetwork(primaryStage, localPort, peerIp, peerPort);
 
@@ -301,6 +339,8 @@ public class Main extends Application {
         Scene scene = new Scene(appRoot, VIEW_WIDTH, VIEW_HEIGHT);
 
         scene.setOnKeyPressed(e -> {
+            if (!isMyTurn || gameFinished) return; 
+
             if (e.getCode() == KeyCode.A)      leftPressed = true;
             if (e.getCode() == KeyCode.D)      rightPressed = true;
             if (e.getCode() == KeyCode.W)      player.jump();
@@ -312,6 +352,8 @@ public class Main extends Application {
         });
 
         scene.setOnKeyReleased(e -> {
+            if (!isMyTurn || gameFinished) return; 
+
             if (e.getCode() == KeyCode.A) leftPressed  = false;
             if (e.getCode() == KeyCode.D) rightPressed = false;
             if (!leftPressed && !rightPressed) player.stopMovingState();
@@ -337,8 +379,14 @@ public class Main extends Application {
 
                 player.updateHpBar(gameRoot.getLayoutX());
                 updateRemoteHpBar();
+                checkWinConditions();
+                
+                String turnStatus = isMyTurn ? "YOUR TURN" : "WAITING FOR OPPONENT";
+                if (gameFinished) turnStatus = "GAME OVER";
+
                 hudLabel.setText(String.format(
-                    "HP: %d\nState: %s\nTurn Clock: %.1fs\nMove Fuel: %.1fs\nAim Angle: %.0f°\nCharge: %.0f%%",
+                    "[%s]\nHP: %d\nState: %s\nTurn Clock: %.1fs\nMove Fuel: %.1fs\nAim Angle: %.0f°\nCharge: %.0f%%",
+                    turnStatus,
                     player.getHp(),
                     player.getCurrentState(),
                     player.getTurnTimeRemaining(),
@@ -350,7 +398,6 @@ public class Main extends Application {
                 secondsSinceLastFpsLog += secondsElapsed;
                 framesSinceLastFpsLog++;
                 if (secondsSinceLastFpsLog >= 0.5f) {
-                    System.out.println("FPS: " + Math.round(framesSinceLastFpsLog / secondsSinceLastFpsLog));
                     secondsSinceLastFpsLog = 0;
                     framesSinceLastFpsLog  = 0;
                 }
@@ -364,15 +411,25 @@ public class Main extends Application {
     }
 
     private void tick(float dt) {
-        if (leftPressed)  player.moveLeft(dt);
-        if (rightPressed) player.moveRight(dt);
+        if (gameFinished) return;
+
+        if (isMyTurn) {
+            if (leftPressed)  player.moveLeft(dt);
+            if (rightPressed) player.moveRight(dt);
+        }
 
         player.update(dt);
 
         for (int i = projectiles.size() - 1; i >= 0; i--) {
             Projectile p = projectiles.get(i);
             p.update();
-            if (!p.isActive()) projectiles.remove(i);
+            if (!p.isActive()) {
+                projectiles.remove(i);
+                
+                if (isMyTurn && p.getShooter() == player) {
+                    passTurnToPeer();
+                }
+            }
         }
 
         broadcastState();
