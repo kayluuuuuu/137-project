@@ -183,11 +183,137 @@ public class Main extends Application {
 
     @Override
     public void start(Stage mainStage) throws Exception {
+        // Sensible network defaults
+        int[] localPort = {5000};
+        String[] peerIp = {"127.0.0.1"};
+        int[] peerPort = {5000};
+
+        // 1. Check for command-line arguments to support automated non-interactive launches
+        java.util.List<String> rawArgs = getParameters().getRaw();
+        boolean hasArgs = false;
+        if (rawArgs.size() >= 3) {
+            try {
+                localPort[0] = Integer.parseInt(rawArgs.get(0));
+                peerIp[0] = rawArgs.get(1);
+                peerPort[0] = Integer.parseInt(rawArgs.get(2));
+                hasArgs = true;
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid CLI args. Falling back to launcher UI.");
+            }
+        }
+
+        if (hasArgs) {
+            startGame(mainStage, localPort[0], peerIp[0], peerPort[0]);
+        } else {
+            // 2. Display a beautiful, styled setup launcher stage
+            Stage launcherStage = new Stage();
+            launcherStage.setTitle("WORMS 137 - Multiplayer Launcher");
+
+            javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
+            grid.setAlignment(javafx.geometry.Pos.CENTER);
+            grid.setHgap(15);
+            grid.setVgap(15);
+            grid.setPadding(new javafx.geometry.Insets(25, 25, 25, 25));
+            grid.setStyle("-fx-background-color: #1a1a24;");
+
+            // Header Title
+            javafx.scene.text.Text title = new javafx.scene.text.Text("WORMS 137");
+            title.setFont(javafx.scene.text.Font.font("System", javafx.scene.text.FontWeight.BOLD, 26));
+            title.setFill(Color.web("#ff4a5a"));
+            grid.add(title, 0, 0, 2, 1);
+
+            javafx.scene.text.Text subtitle = new javafx.scene.text.Text("Multiplayer Lobby Setup");
+            subtitle.setFont(javafx.scene.text.Font.font("System", javafx.scene.text.FontWeight.NORMAL, 14));
+            subtitle.setFill(Color.web("#8b8ba8"));
+            grid.add(subtitle, 0, 1, 2, 1);
+
+            // Local listening port
+            javafx.scene.control.Label localPortLabel = new javafx.scene.control.Label("Your Port (Listen):");
+            localPortLabel.setTextFill(Color.web("#b4b4d0"));
+            grid.add(localPortLabel, 0, 2);
+
+            javafx.scene.control.TextField localPortField = new javafx.scene.control.TextField("5000");
+            localPortField.setStyle("-fx-background-color: #2b2b3d; -fx-text-fill: white; -fx-border-color: #3b3b4f; -fx-border-radius: 4; -fx-background-radius: 4; -fx-font-size: 13;");
+            localPortField.setPrefWidth(200);
+            grid.add(localPortField, 1, 2);
+
+            // Peer IP address
+            javafx.scene.control.Label peerIpLabel = new javafx.scene.control.Label("Peer IP Address:");
+            peerIpLabel.setTextFill(Color.web("#b4b4d0"));
+            grid.add(peerIpLabel, 0, 3);
+
+            javafx.scene.control.TextField peerIpField = new javafx.scene.control.TextField("127.0.0.1");
+            peerIpField.setStyle("-fx-background-color: #2b2b3d; -fx-text-fill: white; -fx-border-color: #3b3b4f; -fx-border-radius: 4; -fx-background-radius: 4; -fx-font-size: 13;");
+            grid.add(peerIpField, 1, 3);
+
+            // Peer Port
+            javafx.scene.control.Label peerPortLabel = new javafx.scene.control.Label("Peer Port:");
+            peerPortLabel.setTextFill(Color.web("#b4b4d0"));
+            grid.add(peerPortLabel, 0, 4);
+
+            javafx.scene.control.TextField peerPortField = new javafx.scene.control.TextField("5000");
+            peerPortField.setStyle("-fx-background-color: #2b2b3d; -fx-text-fill: white; -fx-border-color: #3b3b4f; -fx-border-radius: 4; -fx-background-radius: 4; -fx-font-size: 13;");
+            grid.add(peerPortField, 1, 4);
+
+            // Local machine presets
+            javafx.scene.layout.HBox presets = new javafx.scene.layout.HBox(10);
+            presets.setAlignment(javafx.geometry.Pos.CENTER);
+            
+            javafx.scene.control.Button p1Btn = new javafx.scene.control.Button("Preset: Player 1");
+            p1Btn.setStyle("-fx-background-color: #3b3b4f; -fx-text-fill: #00ffcc; -fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 4;");
+            p1Btn.setOnAction(e -> {
+                localPortField.setText("5000");
+                peerIpField.setText("127.0.0.1");
+                peerPortField.setText("5001");
+            });
+
+            javafx.scene.control.Button p2Btn = new javafx.scene.control.Button("Preset: Player 2");
+            p2Btn.setStyle("-fx-background-color: #3b3b4f; -fx-text-fill: #00ffcc; -fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 4;");
+            p2Btn.setOnAction(e -> {
+                localPortField.setText("5001");
+                peerIpField.setText("127.0.0.1");
+                peerPortField.setText("5000");
+            });
+
+            presets.getChildren().addAll(p1Btn, p2Btn);
+            grid.add(presets, 0, 5, 2, 1);
+
+            // Connect & Launch Button
+            javafx.scene.control.Button launchBtn = new javafx.scene.control.Button("Connect & Launch Game");
+            launchBtn.setPrefWidth(350);
+            launchBtn.setStyle("-fx-background-color: #ff4a5a; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 14; -fx-cursor: hand; -fx-background-radius: 6; -fx-padding: 8 16;");
+            
+            // Hover styling
+            launchBtn.setOnMouseEntered(e -> launchBtn.setStyle("-fx-background-color: #ff606e; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 14; -fx-cursor: hand; -fx-background-radius: 6; -fx-padding: 8 16;"));
+            launchBtn.setOnMouseExited(e -> launchBtn.setStyle("-fx-background-color: #ff4a5a; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 14; -fx-cursor: hand; -fx-background-radius: 6; -fx-padding: 8 16;"));
+            
+            launchBtn.setOnAction(e -> {
+                try {
+                    int myLp = Integer.parseInt(localPortField.getText().trim());
+                    String peerIpStr = peerIpField.getText().trim();
+                    int peerLp = Integer.parseInt(peerPortField.getText().trim());
+                    launcherStage.close();
+                    startGame(mainStage, myLp, peerIpStr, peerLp);
+                } catch (NumberFormatException ex) {
+                    subtitle.setText("Error: Ports must be integers!");
+                    subtitle.setFill(Color.YELLOW);
+                }
+            });
+            grid.add(launchBtn, 0, 6, 2, 1);
+
+            Scene scene = new Scene(grid, 420, 360);
+            launcherStage.setScene(scene);
+            launcherStage.setResizable(false);
+            launcherStage.show();
+        }
+    }
+
+    private void startGame(Stage mainStage, int localPort, String peerIp, int peerPort) {
         initContent();
 
         // Initialize Network
         try {
-            networkManager = new NetworkManager(5000, message -> {
+            networkManager = new NetworkManager(localPort, message -> {
                 javafx.application.Platform.runLater(() -> {
                     String[] parts = message.split(",");
                     if (parts.length == 2) {
@@ -201,9 +327,13 @@ public class Main extends Application {
                 });
             });
             networkManager.startListening();
-            // Connect to your friend's IP
-            networkManager.setPeer("160.20.41.35", 5000); 
+            // Connect to peer dynamically configured
+            networkManager.setPeer(peerIp, peerPort);
+            System.out.println("Network Initialized Successfully!");
+            System.out.println("Listening on Port: " + localPort);
+            System.out.println("Connected to Peer: " + peerIp + ":" + peerPort);
         } catch (Exception e) {
+            System.err.println("Failed to start networking: " + e.getMessage());
             e.printStackTrace();
         }
 
@@ -217,7 +347,7 @@ public class Main extends Application {
         Scene scene = new Scene(appRoot);
         scene.setOnKeyPressed(event -> keys.put(event.getCode(), true));
         scene.setOnKeyReleased(event -> keys.put(event.getCode(), false));
-        mainStage.setTitle("WORMS 137");
+        mainStage.setTitle("WORMS 137 [Port " + localPort + " -> Peer " + peerIp + ":" + peerPort + "]");
         mainStage.setScene(scene);
         mainStage.show();
 
@@ -246,7 +376,7 @@ public class Main extends Application {
                 framesSinceLastFpsUpdate++;
                 if (secondsElapsedSinceLastFpsUpdate >= 0.5f) {
                     int fps = Math.round(framesSinceLastFpsUpdate / secondsElapsedSinceLastFpsUpdate);
-                    System.out.println(fps);
+                    System.out.println("FPS: " + fps);
                     secondsElapsedSinceLastFpsUpdate = 0;
                     framesSinceLastFpsUpdate = 0;
                 }
